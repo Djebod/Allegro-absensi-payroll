@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Guard from "@/components/Guard";
 import Shell from "@/components/Shell";
 import FotoKaryawan from "@/components/FotoKaryawan";
+import BadgeLokasi from "@/components/BadgeLokasi";
 import KameraBelakang from "@/components/KameraBelakang";
 import { Pesan } from "@/components/Field";
 import { useAuth } from "@/lib/auth";
@@ -46,6 +47,7 @@ function Isi() {
   const [pesan, setPesan] = useState<string | null>(null);
 
   const [antrean, setAntrean] = useState<Antrean | null>(null);
+  const [titikSaya, setTitikSaya] = useState<TitikAbsen | null>(null);
   const [mengirim, setMengirim] = useState(false);
   const [mencariLokasi, setMencariLokasi] = useState(false);
 
@@ -211,6 +213,37 @@ function Isi() {
           Absen hanya bisa dicatat dalam radius {proyekSaya.attendanceRadiusMeter} meter dari titik
           proyek, dan wajib berfoto.
         </p>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+          <button
+            className="btn-ringan"
+            disabled={mencariLokasi}
+            onClick={async () => {
+              setSalah(null);
+              setMencariLokasi(true);
+              try {
+                setTitikSaya(await ambilTitik());
+              } catch (e) {
+                setTitikSaya(null);
+                setSalah(e instanceof Error ? e.message : "Lokasi gagal diambil.");
+              } finally {
+                setMencariLokasi(false);
+              }
+            }}
+          >
+            Periksa lokasi saya
+          </button>
+
+          {titikSaya && (
+            <div className="flex flex-wrap items-center gap-2">
+              <BadgeLokasi
+                jarakMeter={titikSaya.distanceFromProjectMeter}
+                radiusMeter={proyekSaya.attendanceRadiusMeter}
+              />
+              <span className="text-xs text-muted">ketelitian GPS ±{titikSaya.accuracy} m</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {(salah || pesan) && (
@@ -243,9 +276,18 @@ function Isi() {
                     </p>
                   </div>
                 </div>
-                <span className={`label-status ${warnaStatus(absen?.status)}`}>
-                  {absen?.status || "BELUM"}
-                </span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={`label-status ${warnaStatus(absen?.status)}`}>
+                    {absen?.status || "BELUM"}
+                  </span>
+                  {absen?.terakhir && (
+                    <BadgeLokasi
+                      jarakMeter={absen.terakhir.jarakMeter}
+                      radiusMeter={proyekSaya.attendanceRadiusMeter}
+                      ringkas
+                    />
+                  )}
+                </div>
               </div>
 
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">

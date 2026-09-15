@@ -140,3 +140,22 @@ export function hitungJam(absen: Partial<Attendance>): {
 export function jamTidakWajar(workHours: number): boolean {
   return workHours > STANDARD_WORK_HOURS + 4;
 }
+
+/**
+ * Selisih antara jam HP dan jam server, dalam menit.
+ * Jam server yang dipercaya. Selisih besar berarti jam perangkatnya
+ * meleset - entah tidak sengaja atau disengaja - dan itu perlu terlihat.
+ */
+export function selisihJamServerMenit(event?: {
+  waktu?: string;
+  recordedAt?: unknown;
+} | null): number | null {
+  if (!event?.waktu || !event.recordedAt) return null;
+  const server = event.recordedAt as { toDate?: () => Date };
+  if (typeof server.toDate !== "function") return null;
+  const beda = Math.abs(server.toDate().getTime() - new Date(event.waktu).getTime());
+  return Math.round(beda / 60000);
+}
+
+/** Di atas ini dianggap perlu diperiksa manusia. */
+export const BATAS_SELISIH_JAM_MENIT = 10;

@@ -440,3 +440,30 @@ export async function catatSesi(opsi: {
 
   return NAMA_SESI[opsi.jenis];
 }
+
+/** Rekap absensi satu tanggal untuk Admin dan Finance. */
+export function pantauAbsensiTanggal(
+  tanggal: string,
+  projectId: string | null,
+  onData: (data: Attendance[]) => void,
+  onGagal: () => void
+) {
+  const dasar = [
+    collection(dbClient(), "attendance"),
+    where("date", "==", tanggal),
+  ] as const;
+
+  const q = projectId
+    ? query(dasar[0], dasar[1], where("projectId", "==", projectId))
+    : query(dasar[0], dasar[1]);
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const isi = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Attendance, "id">) }));
+      isi.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+      onData(isi);
+    },
+    onGagal
+  );
+}
