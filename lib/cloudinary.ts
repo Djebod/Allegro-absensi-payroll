@@ -104,3 +104,17 @@ export async function unggahFoto(file: File, folder: string): Promise<HasilUngga
 export const FOLDER_PROFIL = "allegro/profil";
 export const FOLDER_KTP = "allegro/ktp";
 export const FOLDER_ABSENSI = "allegro/absensi";
+
+/**
+ * Mengubah tautan Cloudinary menjadi versi kecil yang dipotong persegi.
+ * Daftar karyawan bisa berisi puluhan foto; memuat gambar ukuran penuh
+ * di sana boros kuota dan lambat di jaringan lapangan.
+ */
+export function fotoKecil(url: string | null | undefined, px = 96): string {
+  if (!url) return "";
+  const tanda = "/upload/";
+  const posisi = url.indexOf(tanda);
+  if (posisi === -1) return url;
+  const ubah = `c_fill,g_face,w_${px},h_${px},q_auto,f_auto/`;
+  return url.slice(0, posisi + tanda.length) + ubah + url.slice(posisi + tanda.length);
+}

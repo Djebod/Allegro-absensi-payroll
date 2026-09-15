@@ -8,6 +8,7 @@ import Guard from "@/components/Guard";
 import Shell from "@/components/Shell";
 import Modal from "@/components/Modal";
 import UnggahFoto from "@/components/UnggahFoto";
+import FotoKaryawan from "@/components/FotoKaryawan";
 import { Field, Pesan } from "@/components/Field";
 import { dbClient } from "@/lib/firebase";
 import {
@@ -181,7 +182,9 @@ function Isi({ kode }: { kode: string }) {
       {/* Identitas */}
       <div className="kartu">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+          <div className="flex items-center gap-3">
+            <FotoKaryawan nama={karyawan.name} url={karyawan.profilePhotoUrl} px={56} />
+            <div>
             <p className="text-xs font-semibold text-muted">
               {karyawan.employeeCode} · {karyawan.position}
             </p>
@@ -193,6 +196,7 @@ function Isi({ kode }: { kode: string }) {
               NIK {karyawan.nik}
               {karyawan.phone ? ` · ${karyawan.phone}` : ""}
             </p>
+            </div>
           </div>
           <span
             className={`label-status ${
