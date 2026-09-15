@@ -16,13 +16,18 @@ import {
 } from "firebase/firestore";
 import { dbClient } from "@/lib/firebase";
 import type {
+  Attendance,
   Employee,
   EmployeeAssignment,
   EmployeePrivate,
+  EventAbsen,
+  JenisSesi,
   Project,
   SalaryRate,
   Section,
+  TitikAbsen,
 } from "@/types";
+import { hitungJam, idAbsensi, NAMA_SESI, periksaSesi } from "@/lib/absensi";
 
 /**
  * Kode dipakai sebagai ID dokumen, jadi harus dirapikan lebih dulu:
@@ -316,4 +321,122 @@ export async function semuaSection() {
 export async function semuaProyek() {
   const snap = await getDocs(collection(dbClient(), "projects"));
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Project, "id">) }));
+}
+
+/* ---------------- Absensi ---------------- */
+
+
+/** Karyawan yang sedang ditugaskan kepada seorang mandor (termasuk mandornya). */
+export function pantauTimMandor(
+  mandorId: string,
+  onData: (data: Employee[]) => void,
+  onGagal: () => void
+) {
+  return onSnapshot(
+    query(collection(dbClient(), "employees"), where("currentMandorId", "==", mandorId)),
+    (snap) => {
+      const isi = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }));
+      isi.sort((a, b) => {
+        if (a.position !== b.position) return a.position === "MANDOR" ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      onData(isi.filter((e) => e.status === "ACTIVE"));
+    },
+    onGagal
+  );
+}
+
+export function pantauAbsensiHarian(
+  mandorId: string,
+  tanggal: string,
+  onData: (data: Record<string, Attendance>) => void,
+  onGagal: () => void
+) {
+  return onSnapshot(
+    query(
+      collection(dbClient(), "attendance"),
+      where("mandorId", "==", mandorId),
+      where("date", "==", tanggal)
+    ),
+    (snap) => {
+      const peta: Record<string, Attendance> = {};
+      snap.docs.forEach((d) => {
+        const isi = { id: d.id, ...(d.data() as Omit<Attendance, "id">) };
+        peta[isi.employeeId] = isi;
+      });
+      onData(peta);
+    },
+    onGagal
+  );
+}
+
+/**
+ * Mencatat satu sesi absensi. Dokumennya ber-ID employee + tanggal,
+ * jadi satu orang tidak mungkin punya dua catatan di hari yang sama
+ * walaupun tombolnya tertekan dua kali atau sinyalnya putus lalu
+ * tersambung lagi.
+ */
+export async function catatSesi(opsi: {
+  karyawan: Employee;
+  projectId: string;
+  sectionId: string;
+  mandorId: string;
+  tanggal: string;
+  jenis: JenisSesi;
+  titik: TitikAbsen;
+  photoUrl: string;
+  oleh: string;
+}) {
+  const db = dbClient();
+  const id = idAbsensi(opsi.karyawan.id, opsi.tanggal);
+  const ref = doc(db, "attendance", id);
+  const snap = await getDoc(ref);
+  const sekarang = snap.exists() ? (snap.data() as Partial<Attendance>) : {};
+
+  const cek = periksaSesi(sekarang, opsi.jenis);
+  if (!cek.boleh) throw new Error(cek.alasan || "Sesi ini tidak bisa dicatat.");
+
+  if (!snap.exists()) {
+    await setDoc(ref, {
+      employeeId: opsi.karyawan.id,
+      employeeName: opsi.karyawan.name,
+      projectId: opsi.projectId,
+      sectionId: opsi.sectionId,
+      mandorId: opsi.mandorId,
+      date: opsi.tanggal,
+      workHours: 0,
+      overtimeHours: 0,
+      status: "BELUM",
+      isOverridden: false,
+      terakhir: null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  const event: EventAbsen = {
+    waktu: new Date().toISOString(),
+    recordedBy: opsi.oleh,
+    location: opsi.titik,
+    photoUrl: opsi.photoUrl,
+  };
+
+  const hitung = hitungJam({ ...sekarang, [opsi.jenis]: event });
+
+  // Ditulis dengan jalur bertitik supaya jam server bisa dipakai di
+  // dalam event, bukan jam HP yang bisa saja disetel mundur.
+  await updateDoc(ref, {
+    [`${opsi.jenis}.waktu`]: event.waktu,
+    [`${opsi.jenis}.recordedAt`]: serverTimestamp(),
+    [`${opsi.jenis}.recordedBy`]: event.recordedBy,
+    [`${opsi.jenis}.location`]: event.location,
+    [`${opsi.jenis}.photoUrl`]: event.photoUrl,
+    workHours: hitung.workHours,
+    overtimeHours: hitung.overtimeHours,
+    status: hitung.status,
+    terakhir: { jenis: opsi.jenis, jarakMeter: opsi.titik.distanceFromProjectMeter },
+    updatedAt: serverTimestamp(),
+  });
+
+  return NAMA_SESI[opsi.jenis];
 }

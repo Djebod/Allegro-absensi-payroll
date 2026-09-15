@@ -2,9 +2,9 @@ rules_version = '2';
 
 // ============================================================
 //  ABSENSI & PAYROLL PROYEK — Allegro Global Construction
-//  Security Rules — Tahap 3
+//  Security Rules — Tahap 4
 //  users, projects, sections, employees, employeePrivate,
-//  salaryRates, employeeAssignments
+//  salaryRates, employeeAssignments, attendance
 //
 //  Prinsip: DEFAULT DENY. Semua yang tidak disebut di sini ditolak.
 //  Menu yang disembunyikan di layar BUKAN keamanan. Aturan di file
@@ -224,6 +224,59 @@ service cloud.firestore {
         && request.resource.data.mandorId == resource.data.mandorId
         && request.resource.data.effectiveFrom == resource.data.effectiveFrom;
 
+      allow delete: if false;
+    }
+
+    // ---------- attendance ----------
+    function radiusProyek(projectId) {
+      return get(/databases/$(database)/documents/projects/$(projectId)).data.attendanceRadiusMeter;
+    }
+
+    function absensiSah() {
+      let d = request.resource.data;
+      return d.employeeId is string && d.employeeId.size() > 0
+        && d.date is string && d.date.size() == 10
+        && d.projectId is string && d.projectId.size() > 0
+        && d.mandorId is string && d.mandorId.size() > 0
+        && d.workHours is number && d.workHours >= 0
+        && d.overtimeHours is number && d.overtimeHours >= 0
+        && d.status in ['BELUM', 'HADIR', 'TIDAK_LENGKAP', 'SELESAI'];
+    }
+
+    /** Jarak sesi yang baru ditulis harus di dalam radius proyek. */
+    function jarakWajar() {
+      let t = request.resource.data.terakhir;
+      return t == null
+        || (t.jarakMeter is number
+            && t.jarakMeter >= 0
+            && t.jarakMeter <= radiusProyek(request.resource.data.projectId));
+    }
+
+    match /attendance/{absenId} {
+      allow read: if isAdmin()
+        || isFinance()
+        || (isMandor() && resource.data.mandorId == profilSaya().employeeId);
+
+      // ID dokumen wajib "<employeeId>_<tanggal>". Inilah yang membuat
+      // satu orang mustahil punya dua catatan di hari yang sama, termasuk
+      // ketika sinyal putus lalu aplikasi mengirim ulang.
+      allow create: if (isAdmin() || isMandor())
+        && absensiSah()
+        && jarakWajar()
+        && absenId == request.resource.data.employeeId + '_' + request.resource.data.date
+        && (isAdmin() || request.resource.data.mandorId == profilSaya().employeeId);
+
+      // Mandor hanya boleh menambah sesi pada catatan miliknya sendiri,
+      // dan tidak boleh memindahkan catatan itu ke orang atau hari lain.
+      allow update: if (isAdmin() || isMandor())
+        && absensiSah()
+        && jarakWajar()
+        && request.resource.data.employeeId == resource.data.employeeId
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.mandorId == resource.data.mandorId
+        && (isAdmin() || resource.data.mandorId == profilSaya().employeeId);
+
+      // Absensi tidak dihapus. Kalau salah, jalurnya koreksi ber-audit.
       allow delete: if false;
     }
 

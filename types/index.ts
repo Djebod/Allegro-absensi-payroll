@@ -143,3 +143,61 @@ export interface EmployeePrivate {
   ktpPublicId: string | null;
   updatedAt?: unknown;
 }
+
+/* ---------------- Absensi ---------------- */
+
+export type JenisSesi =
+  | "checkIn"
+  | "breakStart"
+  | "breakEnd"
+  | "checkOut"
+  | "overtimeStart"
+  | "overtimeEnd";
+
+export interface TitikAbsen {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  distanceFromProjectMeter: number;
+}
+
+export interface EventAbsen {
+  /** Jam menurut perangkat, untuk ditampilkan. */
+  waktu: string;
+  /** Jam menurut server, ini yang dipercaya saat ada selisih. */
+  recordedAt?: unknown;
+  recordedBy: string;
+  location: TitikAbsen;
+  photoUrl: string;
+}
+
+export type StatusAbsen = "BELUM" | "HADIR" | "TIDAK_LENGKAP" | "SELESAI";
+
+/** ID dokumen = "<employeeId>_<YYYY-MM-DD>", jadi tidak mungkin dobel. */
+export interface Attendance {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  projectId: string;
+  sectionId: string;
+  mandorId: string;
+  date: string;
+
+  checkIn?: EventAbsen | null;
+  breakStart?: EventAbsen | null;
+  breakEnd?: EventAbsen | null;
+  checkOut?: EventAbsen | null;
+  overtimeStart?: EventAbsen | null;
+  overtimeEnd?: EventAbsen | null;
+
+  workHours: number;
+  overtimeHours: number;
+  status: StatusAbsen;
+  isOverridden: boolean;
+
+  /** Sesi terakhir yang tercatat; dipakai Security Rules memeriksa jarak. */
+  terakhir?: { jenis: JenisSesi; jarakMeter: number } | null;
+
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
