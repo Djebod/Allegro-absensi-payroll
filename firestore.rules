@@ -2,9 +2,9 @@ rules_version = '2';
 
 // ============================================================
 //  ABSENSI & PAYROLL PROYEK — Allegro Global Construction
-//  Security Rules — Tahap 4
+//  Security Rules — Tahap 6
 //  users, projects, sections, employees, employeePrivate,
-//  salaryRates, employeeAssignments, attendance
+//  salaryRates, employeeAssignments, attendance, attendanceCorrections
 //
 //  Prinsip: DEFAULT DENY. Semua yang tidak disebut di sini ditolak.
 //  Menu yang disembunyikan di layar BUKAN keamanan. Aturan di file
@@ -283,10 +283,48 @@ service cloud.firestore {
         && request.resource.data.employeeId == resource.data.employeeId
         && request.resource.data.date == resource.data.date
         && request.resource.data.mandorId == resource.data.mandorId
-        && (isAdmin() || resource.data.mandorId == profilSaya().employeeId);
+        && (
+          isAdmin()
+          || (
+            resource.data.mandorId == profilSaya().employeeId
+            // Setelah Admin mengoreksi, mandor tidak bisa menulis lagi
+            // pada catatan itu. Kalau masih ada yang keliru, jalurnya
+            // lewat Admin, supaya tetap berjejak.
+            && resource.data.isOverridden == false
+          )
+        );
 
       // Absensi tidak dihapus. Kalau salah, jalurnya koreksi ber-audit.
       allow delete: if false;
+    }
+
+    // ---------- attendanceCorrections (jejak audit) ----------
+    function koreksiSah() {
+      let d = request.resource.data;
+      return d.attendanceId is string && d.attendanceId.size() > 0
+        && d.employeeId is string && d.employeeId.size() > 0
+        && d.date is string && d.date.size() == 10
+        && d.field in ['checkIn', 'breakStart', 'breakEnd', 'checkOut',
+                       'overtimeStart', 'overtimeEnd']
+        && d.hasil in ['VALID', 'TIDAK_VALID']
+        && d.approvedBy is string && d.approvedBy.size() > 0
+        // Penilaian "tidak valid" tidak boleh sekadar diklik: wajib
+        // menyebut alasannya dan melampirkan bukti. Ini ditegakkan di
+        // server, bukan hanya di formulir, supaya tidak bisa dilewati.
+        && (
+          d.hasil == 'VALID'
+          || (d.alasan is string && d.alasan.size() > 0
+              && d.attachmentUrl is string && d.attachmentUrl.size() > 0)
+        );
+    }
+
+    match /attendanceCorrections/{koreksiId} {
+      allow read: if isAdmin() || isFinance();
+      allow create: if isAdmin() && koreksiSah();
+
+      // Jejak audit bersifat tambah-saja. Sekali tertulis, tidak bisa
+      // diubah maupun dihapus oleh siapa pun, termasuk Admin.
+      allow update, delete: if false;
     }
 
     // ---------- koleksi lain masih ditutup ----------

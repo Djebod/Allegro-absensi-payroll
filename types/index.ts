@@ -161,14 +161,49 @@ export interface TitikAbsen {
   distanceFromProjectMeter: number;
 }
 
+export type HasilValidasi = "VALID" | "TIDAK_VALID";
+
+export interface ValidasiEvent {
+  hasil: HasilValidasi;
+  /** Wajib diisi bila hasilnya TIDAK_VALID. */
+  alasan?: string;
+  /** Wajib diisi bila hasilnya TIDAK_VALID. Foto bukti dari galeri. */
+  buktiUrl?: string | null;
+  oleh: string;
+  pada?: unknown;
+}
+
 export interface EventAbsen {
   /** Jam menurut perangkat, untuk ditampilkan. */
   waktu: string;
+  /**
+   * Jam hasil koreksi Admin. Kalau terisi, inilah yang dipakai
+   * menghitung, dan jam aslinya tetap tersimpan di atas.
+   */
+  waktuAktual?: string | null;
   /** Jam menurut server, ini yang dipercaya saat ada selisih. */
   recordedAt?: unknown;
   recordedBy: string;
   location: TitikAbsen;
   photoUrl: string;
+  validasi?: ValidasiEvent | null;
+}
+
+/** Satu baris jejak audit. Tidak pernah diubah atau dihapus. */
+export interface AttendanceCorrection {
+  id: string;
+  attendanceId: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  field: JenisSesi;
+  hasil: HasilValidasi;
+  waktuLama: string;
+  waktuBaru: string | null;
+  alasan: string;
+  attachmentUrl: string | null;
+  approvedBy: string;
+  createdAt?: unknown;
 }
 
 export type StatusAbsen = "BELUM" | "HADIR" | "TIDAK_LENGKAP" | "SELESAI";

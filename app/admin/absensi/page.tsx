@@ -6,8 +6,10 @@ import Guard from "@/components/Guard";
 import Shell from "@/components/Shell";
 import Modal from "@/components/Modal";
 import BadgeLokasi from "@/components/BadgeLokasi";
+import FormValidasi from "@/components/FormValidasi";
 import { Pesan } from "@/components/Field";
-import { pantauAbsensiTanggal, semuaProyek, semuaSection } from "@/lib/data";
+import { pantauAbsensiTanggal, pantauKoreksi, semuaProyek, semuaSection, simpanValidasi } from "@/lib/data";
+import { useAuth } from "@/lib/auth";
 import { fotoKecil } from "@/lib/cloudinary";
 import {
   BATAS_SELISIH_JAM_MENIT,
@@ -17,7 +19,7 @@ import {
   selisihJamServerMenit,
   tanggalHariIni,
 } from "@/lib/absensi";
-import type { Attendance, Project, Section, StatusAbsen } from "@/types";
+import type { Attendance, AttendanceCorrection, Project, Section, StatusAbsen } from "@/types";
 
 const STATUS: (StatusAbsen | "SEMUA")[] = ["SEMUA", "HADIR", "TIDAK_LENGKAP", "SELESAI"];
 
@@ -38,7 +40,9 @@ function Isi() {
   const [sections, setSections] = useState<Section[]>([]);
   const [memuat, setMemuat] = useState(true);
   const [salah, setSalah] = useState<string | null>(null);
-  const [rincian, setRincian] = useState<Attendance | null>(null);
+  const [rincianId, setRincianId] = useState<string | null>(null);
+  const [koreksi, setKoreksi] = useState<AttendanceCorrection[]>([]);
+  const { profile } = useAuth();
 
   useEffect(() => {
     semuaProyek().then(setProyek).catch(() => {});
@@ -61,6 +65,19 @@ function Isi() {
       }
     );
   }, [tanggal, filterProyek]);
+
+  const rincian = useMemo(
+    () => data.find((a) => a.id === rincianId) || null,
+    [data, rincianId]
+  );
+
+  useEffect(() => {
+    if (!rincianId) {
+      setKoreksi([]);
+      return;
+    }
+    return pantauKoreksi(rincianId, setKoreksi, () => setKoreksi([]));
+  }, [rincianId]);
 
   const terlihat = useMemo(
     () => (filterStatus === "SEMUA" ? data : data.filter((a) => a.status === filterStatus)),
@@ -208,9 +225,16 @@ function Isi() {
                 )}
               </div>
 
-              <button className="btn-ringan mt-3" onClick={() => setRincian(a)}>
-                Rincian & foto
-              </button>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button className="btn-ringan" onClick={() => setRincianId(a.id)}>
+                  Rincian, foto & validasi
+                </button>
+                {a.isOverridden && (
+                  <span className="label-status bg-kuning-400/40 text-allegro-700">
+                    Ada koreksi Admin
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -219,7 +243,7 @@ function Isi() {
       <Modal
         judul={rincian ? `${rincian.employeeName} · ${rincian.date}` : ""}
         terbuka={Boolean(rincian)}
-        onTutup={() => setRincian(null)}
+        onTutup={() => setRincianId(null)}
       >
         {rincian && (
           <div className="space-y-4">
@@ -273,9 +297,66 @@ function Isi() {
                       )}
                     </div>
                   </div>
+
+                  <FormValidasi
+                    absen={rincian}
+                    jenis={jenis}
+                    onSimpan={async (nilai) => {
+                      await simpanValidasi({
+                        absen: rincian,
+                        jenis,
+                        hasil: nilai.hasil,
+                        alasan: nilai.alasan,
+                        buktiUrl: nilai.buktiUrl,
+                        jamAktual: nilai.jamAktual,
+                        oleh: profile?.email || "",
+                      });
+                    }}
+                  />
                 </div>
               );
             })}
+
+            <div className="rounded-lg bg-surface p-3">
+              <p className="text-sm font-semibold text-ink">
+                Jam kerja sekarang {rincian.workHours} · lembur {rincian.overtimeHours}
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                Angka ini sudah memperhitungkan koreksi Admin. Sesi yang dinyatakan tidak valid
+                tanpa jam pengganti dianggap tidak ada.
+              </p>
+            </div>
+
+            {koreksi.length > 0 && (
+              <details className="rounded-lg border border-line p-3">
+                <summary className="cursor-pointer text-sm font-medium text-ink">
+                  Jejak koreksi ({koreksi.length})
+                </summary>
+                <ul className="mt-3 space-y-2 text-xs text-muted">
+                  {koreksi.map((k) => (
+                    <li key={k.id}>
+                      <span className="font-semibold text-ink">{NAMA_SESI[k.field]}</span> ·{" "}
+                      {k.hasil === "VALID" ? "valid" : "tidak valid"} · jam {jamDari(k.waktuLama)}
+                      {k.waktuBaru ? ` → ${jamDari(k.waktuBaru)}` : ""} · oleh {k.approvedBy}
+                      {k.alasan ? ` · ${k.alasan}` : ""}
+                      {k.attachmentUrl && (
+                        <>
+                          {" · "}
+                          <a
+                            href={k.attachmentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline decoration-line underline-offset-2"
+                          >
+                            bukti
+                          </a>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
 
             <p className="text-xs text-muted">
               Jam yang dipercaya adalah jam server. Jam HP hanya ditampilkan supaya mudah dibaca.

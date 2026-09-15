@@ -17,17 +17,19 @@ import {
 import { dbClient } from "@/lib/firebase";
 import type {
   Attendance,
+  AttendanceCorrection,
   Employee,
   EmployeeAssignment,
   EmployeePrivate,
   EventAbsen,
+  HasilValidasi,
   JenisSesi,
   Project,
   SalaryRate,
   Section,
   TitikAbsen,
 } from "@/types";
-import { hitungJam, idAbsensi, NAMA_SESI, periksaSesi } from "@/lib/absensi";
+import { gabungTanggalJam, hitungJam, idAbsensi, NAMA_SESI, periksaSesi } from "@/lib/absensi";
 
 /**
  * Kode dipakai sebagai ID dokumen, jadi harus dirapikan lebih dulu:
@@ -464,6 +466,95 @@ export function pantauAbsensiTanggal(
       isi.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
       onData(isi);
     },
+    onGagal
+  );
+}
+
+/* ---------------- Validasi & koreksi absensi ---------------- */
+
+
+/**
+ * Admin menilai satu sesi absensi, sekaligus boleh membetulkan jamnya.
+ *
+ * Jam aslinya TIDAK pernah ditimpa — jam koreksi disimpan di kolom
+ * terpisah, dan seluruh perubahan dicatat di attendanceCorrections
+ * yang tidak bisa diubah maupun dihapus. Itu syarat dasar audit:
+ * harus selalu bisa dilihat apa yang semula tercatat.
+ */
+export async function simpanValidasi(opsi: {
+  absen: Attendance;
+  jenis: JenisSesi;
+  hasil: HasilValidasi;
+  alasan: string;
+  buktiUrl: string | null;
+  jamAktual: string;
+  oleh: string;
+}) {
+  const event = opsi.absen[opsi.jenis];
+  if (!event) throw new Error("Sesi ini belum pernah tercatat.");
+
+  if (opsi.hasil === "TIDAK_VALID") {
+    if (!opsi.alasan.trim()) throw new Error("Alasan wajib diisi bila sesi dinyatakan tidak valid.");
+    if (!opsi.buktiUrl) throw new Error("Foto bukti wajib dilampirkan bila sesi dinyatakan tidak valid.");
+  }
+
+  const waktuBaru = opsi.jamAktual
+    ? gabungTanggalJam(opsi.absen.date, opsi.jamAktual)
+    : null;
+
+  const validasi = {
+    hasil: opsi.hasil,
+    alasan: opsi.alasan.trim(),
+    buktiUrl: opsi.buktiUrl,
+    oleh: opsi.oleh,
+    pada: serverTimestamp(),
+  };
+
+  const eventBaru = { ...event, waktuAktual: waktuBaru, validasi };
+  const hitung = hitungJam({ ...opsi.absen, [opsi.jenis]: eventBaru });
+
+  const db = dbClient();
+
+  await updateDoc(doc(db, "attendance", opsi.absen.id), {
+    [`${opsi.jenis}.waktuAktual`]: waktuBaru,
+    [`${opsi.jenis}.validasi`]: validasi,
+    workHours: hitung.workHours,
+    overtimeHours: hitung.overtimeHours,
+    status: hitung.status,
+    isOverridden: Boolean(waktuBaru) || opsi.hasil === "TIDAK_VALID",
+    updatedAt: serverTimestamp(),
+  });
+
+  const jejak = doc(collection(db, "attendanceCorrections"));
+  await setDoc(jejak, {
+    attendanceId: opsi.absen.id,
+    employeeId: opsi.absen.employeeId,
+    employeeName: opsi.absen.employeeName,
+    date: opsi.absen.date,
+    field: opsi.jenis,
+    hasil: opsi.hasil,
+    waktuLama: event.waktu,
+    waktuBaru,
+    alasan: opsi.alasan.trim(),
+    attachmentUrl: opsi.buktiUrl,
+    approvedBy: opsi.oleh,
+    createdAt: serverTimestamp(),
+  });
+
+  return hitung;
+}
+
+export function pantauKoreksi(
+  attendanceId: string,
+  onData: (data: AttendanceCorrection[]) => void,
+  onGagal: () => void
+) {
+  return onSnapshot(
+    query(collection(dbClient(), "attendanceCorrections"), where("attendanceId", "==", attendanceId)),
+    (snap) =>
+      onData(
+        snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AttendanceCorrection, "id">) }))
+      ),
     onGagal
   );
 }

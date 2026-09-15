@@ -4,7 +4,7 @@ import {
   INCOMPLETE_DAY_WORK_HOURS,
   STANDARD_WORK_HOURS,
 } from "@/lib/constants";
-import type { Attendance, JenisSesi } from "@/types";
+import type { Attendance, EventAbsen, JenisSesi } from "@/types";
 
 export const URUTAN_SESI: JenisSesi[] = [
   "checkIn",
@@ -84,6 +84,23 @@ export function periksaSesi(
   }
 }
 
+/**
+ * Jam yang dipakai menghitung.
+ *
+ * - Kalau Admin sudah mengoreksi jamnya, jam koreksi yang dipakai.
+ * - Kalau Admin menyatakan sesi ini TIDAK VALID dan tidak memberi jam
+ *   pengganti, sesi itu dianggap tidak ada. Inilah yang membuat lembur
+ *   yang ternyata tidak dikerjakan menjadi nol, bukan sekadar diberi
+ *   catatan merah.
+ * - Selain itu, jam apa adanya.
+ */
+export function waktuEfektif(event?: EventAbsen | null): string | null {
+  if (!event) return null;
+  if (event.waktuAktual) return event.waktuAktual;
+  if (event.validasi?.hasil === "TIDAK_VALID") return null;
+  return event.waktu;
+}
+
 function selisihJam(a?: string | null, b?: string | null): number {
   if (!a || !b) return 0;
   const ms = new Date(b).getTime() - new Date(a).getTime();
@@ -107,10 +124,10 @@ export function hitungJam(absen: Partial<Attendance>): {
   overtimeHours: number;
   status: Attendance["status"];
 } {
-  const masuk = absen.checkIn?.waktu;
-  const mulaiIstirahat = absen.breakStart?.waktu;
-  const selesaiIstirahat = absen.breakEnd?.waktu;
-  const pulang = absen.checkOut?.waktu;
+  const masuk = waktuEfektif(absen.checkIn);
+  const mulaiIstirahat = waktuEfektif(absen.breakStart);
+  const selesaiIstirahat = waktuEfektif(absen.breakEnd);
+  const pulang = waktuEfektif(absen.checkOut);
 
   let workHours = 0;
   let status: Attendance["status"] = "BELUM";
@@ -130,7 +147,7 @@ export function hitungJam(absen: Partial<Attendance>): {
   }
 
   const overtimeHours = bulatkan(
-    selisihJam(absen.overtimeStart?.waktu, absen.overtimeEnd?.waktu)
+    selisihJam(waktuEfektif(absen.overtimeStart), waktuEfektif(absen.overtimeEnd))
   );
 
   return { workHours, overtimeHours, status };
@@ -159,3 +176,15 @@ export function selisihJamServerMenit(event?: {
 
 /** Di atas ini dianggap perlu diperiksa manusia. */
 export const BATAS_SELISIH_JAM_MENIT = 10;
+
+/** "2026-09-15" + "07:30" -> ISO lengkap, memakai zona waktu perangkat. */
+export function gabungTanggalJam(tanggal: string, jam: string): string {
+  return new Date(`${tanggal}T${jam}:00`).toISOString();
+}
+
+/** ISO -> "07:30" untuk mengisi kotak jam. */
+export function keKotakJam(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
