@@ -73,26 +73,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    return onAuthStateChanged(authClient(), async (u) => {
-      setError(null);
-      if (!u) {
-        setUser(null);
-        setProfile(null);
-        setLoading(false);
-        return;
-      }
-      try {
-        const p = await ambilAtauBuatProfil(u);
-        setUser(u);
-        setProfile(p);
-      } catch (e) {
-        setUser(u);
-        setProfile(null);
-        setError("Data akun tidak bisa dibaca. Coba muat ulang halaman.");
-      } finally {
-        setLoading(false);
-      }
-    });
+    let lepas: (() => void) | undefined;
+
+    try {
+      lepas = onAuthStateChanged(authClient(), async (u) => {
+        setError(null);
+        if (!u) {
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
+        try {
+          const p = await ambilAtauBuatProfil(u);
+          setUser(u);
+          setProfile(p);
+        } catch {
+          setUser(u);
+          setProfile(null);
+          setError("Data akun tidak bisa dibaca. Periksa Firestore Security Rules, lalu muat ulang halaman.");
+        } finally {
+          setLoading(false);
+        }
+      });
+    } catch {
+      // Firebase gagal dinyalakan - biasanya Environment Variable belum terisi
+      // atau aplikasi belum di-Redeploy sesudah variabelnya ditambahkan.
+      setError(
+        "Pengaturan Firebase belum lengkap. Isi Environment Variable di Vercel, lalu Redeploy aplikasinya."
+      );
+      setLoading(false);
+    }
+
+    return () => lepas?.();
   }, []);
 
   const value = useMemo<AuthState>(
@@ -106,12 +119,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError(null);
         try {
           await signInWithPopup(authClient(), providerGoogle());
-        } catch {
-          setError("Login gagal. Pastikan koneksi aktif, lalu coba lagi.");
+        } catch (e) {
+          const kode = (e as { code?: string })?.code || "";
+          if (kode === "auth/unauthorized-domain") {
+            setError(
+              "Alamat situs ini belum didaftarkan di Firebase (Authentication - Settings - Authorized domains)."
+            );
+          } else if (kode === "auth/popup-blocked") {
+            setError("Popup login diblokir browser. Izinkan popup untuk situs ini, lalu coba lagi.");
+          } else if (kode.startsWith("auth/invalid-api")) {
+            setError("Pengaturan Firebase belum benar. Periksa Environment Variable di Vercel.");
+          } else {
+            setError("Login gagal. Pastikan koneksi aktif, lalu coba lagi.");
+          }
         }
       },
       keluar: async () => {
-        await signOut(authClient());
+        try {
+          await signOut(authClient());
+        } catch {
+          setError("Gagal keluar. Coba muat ulang halaman.");
+        }
       },
     }),
     [user, profile, loading, error]

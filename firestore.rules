@@ -1,16 +1,18 @@
 rules_version = '2';
 
 // ============================================================
-//  ABSENSI & PAYROLL PROYEK — Security Rules (Phase 1)
+//  ABSENSI & PAYROLL PROYEK — Allegro Global Construction
+//  Security Rules — Tahap 2 (users, projects, sections, employees)
+//
 //  Prinsip: DEFAULT DENY. Semua yang tidak disebut di sini ditolak.
-//  Tampilan/menu yang disembunyikan BUKAN keamanan. Aturan di file
+//  Menu yang disembunyikan di layar BUKAN keamanan. Aturan di file
 //  inilah yang benar-benar menjaga data.
 // ============================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---- fungsi bantu ----
+    // ---------- fungsi bantu ----------
     function emailSuperAdmin() {
       return 'syam.rakhmany@gmail.com';
     }
@@ -27,16 +29,24 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isAdmin() {
+    function berperan(peran) {
       return sudahLogin()
-        && profilSaya().role == 'ADMIN'
-        && profilSaya().status == 'ACTIVE';
+        && profilSaya().status == 'ACTIVE'
+        && profilSaya().role == peran;
     }
 
-    // ---- users ----
+    function isAdmin()   { return berperan('ADMIN'); }
+    function isFinance() { return berperan('FINANCE'); }
+    function isMandor()  { return berperan('MANDOR'); }
+
+    /** Siapa saja yang sudah diberi peran dan masih aktif. */
+    function pegawaiAktif() {
+      return isAdmin() || isFinance() || isMandor();
+    }
+
+    // ---------- users ----------
     match /users/{uid} {
 
-      // Boleh membaca dokumen sendiri; Admin boleh membaca semua.
       allow read: if sudahLogin() && (request.auth.uid == uid || isAdmin());
 
       // Pendaftaran diri sendiri saat login Google pertama kali.
@@ -56,18 +66,87 @@ service cloud.firestore {
             && request.resource.data.status == 'PENDING')
         );
 
-      // Hanya Admin yang boleh mengubah peran/status.
-      // Email tidak boleh diganti, dan dokumen super admin hanya boleh
-      // disentuh oleh super admin itu sendiri.
       allow update: if isAdmin()
         && request.resource.data.email == resource.data.email
         && (resource.data.email != emailSuperAdmin() || emailUser() == emailSuperAdmin());
 
-      // Histori pengguna tidak dihapus.
       allow delete: if false;
     }
 
-    // ---- semua koleksi lain ditolak sampai tahap berikutnya ----
+    // ---------- projects ----------
+    function proyekSah() {
+      let d = request.resource.data;
+      return d.code is string && d.code.size() > 0
+        && d.name is string && d.name.size() > 0
+        && d.address is string
+        && d.latitude is number && d.latitude >= -90 && d.latitude <= 90
+        && d.longitude is number && d.longitude >= -180 && d.longitude <= 180
+        && d.attendanceRadiusMeter is number
+        && d.attendanceRadiusMeter >= 50 && d.attendanceRadiusMeter <= 5000
+        && d.status in ['ACTIVE', 'COMPLETED', 'SUSPENDED', 'ARCHIVED'];
+    }
+
+    match /projects/{projectId} {
+      // Mandor ikut boleh membaca: koordinat proyek dibutuhkan saat absensi.
+      allow read: if pegawaiAktif();
+
+      // Kode proyek = ID dokumen, jadi keunikannya dijamin Firestore.
+      allow create: if isAdmin() && proyekSah() && request.resource.data.code == projectId;
+
+      // Kode tidak boleh berubah setelah dibuat.
+      allow update: if isAdmin() && proyekSah() && request.resource.data.code == resource.data.code;
+
+      // Proyek tidak dihapus, cukup diubah statusnya jadi ARCHIVED.
+      allow delete: if false;
+    }
+
+    // ---------- sections ----------
+    function sectionSah() {
+      let d = request.resource.data;
+      return d.projectId is string && d.projectId.size() > 0
+        && d.code is string && d.code.size() > 0
+        && d.name is string && d.name.size() > 0
+        && d.status in ['ACTIVE', 'INACTIVE'];
+    }
+
+    match /sections/{sectionId} {
+      allow read: if pegawaiAktif();
+      allow create: if isAdmin() && sectionSah();
+      allow update: if isAdmin() && sectionSah()
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.projectId == resource.data.projectId;
+      allow delete: if false;
+    }
+
+    // ---------- employees ----------
+    function karyawanSah() {
+      let d = request.resource.data;
+      return d.employeeCode is string && d.employeeCode.size() > 0
+        && d.name is string && d.name.size() > 0
+        && d.nik is string && d.nik.size() == 16
+        && d.position in ['MANDOR', 'TUKANG', 'KENEK']
+        && d.status in ['ACTIVE', 'INACTIVE'];
+    }
+
+    match /employees/{employeeId} {
+      // Mandor belum boleh membaca data karyawan. Aksesnya dibuka
+      // terbatas pada tahap penugasan (employeeAssignments), supaya
+      // seorang mandor hanya melihat anggota timnya sendiri.
+      allow read: if isAdmin() || isFinance();
+
+      allow create: if isAdmin() && karyawanSah()
+        && request.resource.data.employeeCode == employeeId;
+
+      allow update: if isAdmin() && karyawanSah()
+        && request.resource.data.employeeCode == resource.data.employeeCode
+        && request.resource.data.nik == resource.data.nik;
+
+      // Hanya boleh dihapus kalau memang salah input dan belum dipakai
+      // di mana pun. Setelah ada absensi, karyawan cukup dinonaktifkan.
+      allow delete: if isAdmin();
+    }
+
+    // ---------- koleksi lain masih ditutup ----------
     match /{document=**} {
       allow read, write: if false;
     }

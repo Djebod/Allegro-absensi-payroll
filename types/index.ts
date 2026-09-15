@@ -26,25 +26,65 @@ export interface AppUser {
   lastLoginAt?: unknown;
 }
 
-export type Position = "MANDOR" | "TUKANG" | "KENEK";
-export type PaymentMode = "DAILY" | "HOURLY";
 export type ProjectStatus = "ACTIVE" | "COMPLETED" | "SUSPENDED" | "ARCHIVED";
 
+/**
+ * ID dokumen = kode proyek (mis. "AGC-01").
+ * Dipakai sebagai ID supaya kodenya dijamin unik oleh Firestore sendiri,
+ * tanpa perlu server. Konsekuensinya kode tidak bisa diubah setelah disimpan.
+ */
 export interface Project {
+  id: string;
   code: string;
   name: string;
   description?: string;
-  location: { address: string; latitude: number; longitude: number };
+  address: string;
+  latitude: number;
+  longitude: number;
   attendanceRadiusMeter: number;
   status: ProjectStatus;
   startDate?: string;
   endDate?: string | null;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 }
 
+export type SectionStatus = "ACTIVE" | "INACTIVE";
+
+/** ID dokumen = "<kodeProyek>__<kodeSection>". */
 export interface Section {
+  id: string;
   projectId: string;
   code: string;
   name: string;
   description?: string;
-  status: "ACTIVE" | "INACTIVE";
+  status: SectionStatus;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export type Position = "MANDOR" | "TUKANG" | "KENEK";
+export type EmployeeStatus = "ACTIVE" | "INACTIVE";
+export type PaymentMode = "DAILY" | "HOURLY";
+
+/** ID dokumen = kode karyawan (mis. "TKG-001"). */
+export interface Employee {
+  id: string;
+  employeeCode: string;
+  nik: string;
+  name: string;
+  nickname?: string;
+  position: Position;
+  phone?: string;
+  address?: string;
+  joinDate?: string;
+  status: EmployeeStatus;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountName?: string;
+  /** Diisi pada tahap upload foto (menunggu Cloudinary). */
+  profilePhotoUrl?: string | null;
+  ktpPhotoUrl?: string | null;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 }
