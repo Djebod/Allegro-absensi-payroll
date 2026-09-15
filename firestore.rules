@@ -2,7 +2,9 @@ rules_version = '2';
 
 // ============================================================
 //  ABSENSI & PAYROLL PROYEK — Allegro Global Construction
-//  Security Rules — Tahap 2 (users, projects, sections, employees)
+//  Security Rules — Tahap 3
+//  users, projects, sections, employees, employeePrivate,
+//  salaryRates, employeeAssignments
 //
 //  Prinsip: DEFAULT DENY. Semua yang tidak disebut di sini ditolak.
 //  Menu yang disembunyikan di layar BUKAN keamanan. Aturan di file
@@ -129,10 +131,12 @@ service cloud.firestore {
     }
 
     match /employees/{employeeId} {
-      // Mandor belum boleh membaca data karyawan. Aksesnya dibuka
-      // terbatas pada tahap penugasan (employeeAssignments), supaya
-      // seorang mandor hanya melihat anggota timnya sendiri.
-      allow read: if isAdmin() || isFinance();
+      // Mandor hanya boleh membaca karyawan yang sedang ditugaskan
+      // kepadanya. Kolom currentMandorId adalah cerminan penugasan yang
+      // sedang berjalan; histori lengkapnya ada di employeeAssignments.
+      allow read: if isAdmin()
+        || isFinance()
+        || (isMandor() && resource.data.currentMandorId == profilSaya().employeeId);
 
       allow create: if isAdmin() && karyawanSah()
         && request.resource.data.employeeCode == employeeId;
@@ -144,6 +148,77 @@ service cloud.firestore {
       // Hanya boleh dihapus kalau memang salah input dan belum dipakai
       // di mana pun. Setelah ada absensi, karyawan cukup dinonaktifkan.
       allow delete: if isAdmin();
+    }
+
+    // ---------- employeePrivate (foto KTP) ----------
+    // Sengaja dipisah dari employees supaya Finance dan Mandor tidak
+    // ikut membacanya. KTP adalah identitas resmi, bukan data operasional.
+    match /employeePrivate/{employeeId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ---------- salaryRates ----------
+    function tarifSah() {
+      let d = request.resource.data;
+      return d.employeeId is string && d.employeeId.size() > 0
+        && d.paymentMode in ['DAILY', 'HOURLY']
+        && d.dailyRate is number && d.dailyRate >= 0
+        && d.hourlyRate is number && d.hourlyRate >= 0
+        && d.overtimeHourlyRate is number && d.overtimeHourlyRate >= 0
+        && d.effectiveFrom is string && d.effectiveFrom.size() == 10;
+    }
+
+    match /salaryRates/{rateId} {
+      // Mandor tidak boleh melihat gaji siapa pun, termasuk gajinya sendiri
+      // lewat jalur ini. Itu urusan Admin dan Finance.
+      allow read: if isAdmin() || isFinance();
+
+      allow create: if isAdmin() && tarifSah() && request.resource.data.effectiveUntil == null;
+
+      // Satu-satunya perubahan yang diizinkan: menutup masa berlaku.
+      // Angkanya sendiri tidak boleh diubah, karena payroll lama memakainya.
+      allow update: if isAdmin()
+        && request.resource.data.employeeId == resource.data.employeeId
+        && request.resource.data.paymentMode == resource.data.paymentMode
+        && request.resource.data.dailyRate == resource.data.dailyRate
+        && request.resource.data.hourlyRate == resource.data.hourlyRate
+        && request.resource.data.overtimeHourlyRate == resource.data.overtimeHourlyRate
+        && request.resource.data.effectiveFrom == resource.data.effectiveFrom;
+
+      allow delete: if false;
+    }
+
+    // ---------- employeeAssignments ----------
+    function penugasanSah() {
+      let d = request.resource.data;
+      return d.employeeId is string && d.employeeId.size() > 0
+        && d.projectId is string && d.projectId.size() > 0
+        && d.sectionId is string && d.sectionId.size() > 0
+        && d.mandorId is string && d.mandorId.size() > 0
+        && d.mandorId != d.employeeId
+        && d.effectiveFrom is string && d.effectiveFrom.size() == 10
+        && d.status in ['ACTIVE', 'ENDED'];
+    }
+
+    match /employeeAssignments/{assignmentId} {
+      allow read: if isAdmin()
+        || isFinance()
+        || (isMandor() && resource.data.mandorId == profilSaya().employeeId);
+
+      allow create: if isAdmin() && penugasanSah()
+        && request.resource.data.status == 'ACTIVE'
+        && request.resource.data.effectiveUntil == null;
+
+      // Hanya untuk menutup penugasan. Isi penugasannya tidak boleh diubah,
+      // supaya histori penempatan tetap sesuai kenyataan.
+      allow update: if isAdmin()
+        && request.resource.data.employeeId == resource.data.employeeId
+        && request.resource.data.projectId == resource.data.projectId
+        && request.resource.data.sectionId == resource.data.sectionId
+        && request.resource.data.mandorId == resource.data.mandorId
+        && request.resource.data.effectiveFrom == resource.data.effectiveFrom;
+
+      allow delete: if false;
     }
 
     // ---------- koleksi lain masih ditutup ----------

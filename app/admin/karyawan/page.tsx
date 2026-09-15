@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import Guard from "@/components/Guard";
 import Shell from "@/components/Shell";
@@ -91,7 +92,10 @@ function Isi() {
         bankAccountNumber: form.bankAccountNumber.trim(),
         bankAccountName: form.bankAccountName.trim(),
         profilePhotoUrl: null,
-        ktpPhotoUrl: null,
+        profilePublicId: null,
+        currentProjectId: null,
+        currentSectionId: null,
+        currentMandorId: null,
       });
       setForm(kosong);
       setBuka(false);
@@ -192,6 +196,9 @@ function Isi() {
                   <button className="btn-ringan" onClick={() => gantiStatus(e)}>
                     {e.status === "ACTIVE" ? "Nonaktifkan" : "Aktifkan"}
                   </button>
+                  <Link className="btn-ringan" href={`/admin/karyawan/${e.id}`}>
+                    Buka
+                  </Link>
                 </div>
               </div>
             </div>
@@ -307,7 +314,7 @@ function Isi() {
           </div>
 
           <p className="text-xs text-muted">
-            Foto profil dan KTP belum bisa diunggah. Menyusul setelah penyimpanan foto disiapkan.
+            Foto, tarif gaji, dan penugasan diisi di halaman detail setelah karyawan tersimpan.
           </p>
 
           <button className="btn-utama w-full" onClick={simpan} disabled={menyimpan}>

@@ -82,9 +82,64 @@ export interface Employee {
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountName?: string;
-  /** Diisi pada tahap upload foto (menunggu Cloudinary). */
   profilePhotoUrl?: string | null;
-  ktpPhotoUrl?: string | null;
+  profilePublicId?: string | null;
+  /**
+   * Cerminan penugasan yang sedang berjalan. Histori lengkapnya ada di
+   * employeeAssignments; tiga kolom ini disimpan di sini supaya Security
+   * Rules bisa membatasi mandor hanya melihat anggota timnya sendiri.
+   */
+  currentProjectId?: string | null;
+  currentSectionId?: string | null;
+  currentMandorId?: string | null;
   createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+/* ---------------- Tarif gaji ---------------- */
+
+/**
+ * Tarif tidak pernah ditimpa. Tarif lama ditutup masa berlakunya,
+ * lalu tarif baru dibuat. Payroll lama harus tetap memakai angka
+ * yang berlaku saat itu.
+ */
+export interface SalaryRate {
+  id: string;
+  employeeId: string;
+  paymentMode: PaymentMode;
+  dailyRate: number;
+  hourlyRate: number;
+  overtimeHourlyRate: number;
+  /** Tanggal "YYYY-MM-DD". */
+  effectiveFrom: string;
+  /** Kosong berarti masih berlaku sampai sekarang. */
+  effectiveUntil: string | null;
+  createdBy: string;
+  createdAt?: unknown;
+}
+
+/* ---------------- Penugasan ---------------- */
+
+export type AssignmentStatus = "ACTIVE" | "ENDED";
+
+export interface EmployeeAssignment {
+  id: string;
+  employeeId: string;
+  projectId: string;
+  sectionId: string;
+  mandorId: string;
+  effectiveFrom: string;
+  effectiveUntil: string | null;
+  status: AssignmentStatus;
+  reason?: string;
+  createdBy: string;
+  createdAt?: unknown;
+}
+
+/** Disimpan terpisah karena hanya Admin yang boleh membacanya. */
+export interface EmployeePrivate {
+  employeeId: string;
+  ktpPhotoUrl: string | null;
+  ktpPublicId: string | null;
   updatedAt?: unknown;
 }

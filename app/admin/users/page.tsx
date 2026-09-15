@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import Guard from "@/components/Guard";
 import Shell from "@/components/Shell";
 import { dbClient, SUPER_ADMIN_EMAIL } from "@/lib/firebase";
@@ -17,11 +17,20 @@ function warnaStatus(status: UserStatus) {
 
 function DaftarPengguna() {
   const [users, setUsers] = useState<AppUser[]>([]);
+  const [mandor, setMandor] = useState<{ id: string; name: string }[]>([]);
   const [memuat, setMemuat] = useState(true);
   const [pesan, setPesan] = useState<string | null>(null);
 
   useEffect(() => {
-    return onSnapshot(
+    // Daftar mandor dipakai untuk menyambungkan akun login dengan data karyawan.
+    const lepasMandor = onSnapshot(
+      query(collection(dbClient(), "employees"), where("position", "==", "MANDOR")),
+      (snap) =>
+        setMandor(snap.docs.map((d) => ({ id: d.id, name: String(d.data().name || d.id) }))),
+      () => setMandor([])
+    );
+
+    const lepasUsers = onSnapshot(
       collection(dbClient(), "users"),
       (snap) => {
         setUsers(snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<AppUser, "uid">) })));
@@ -32,6 +41,11 @@ function DaftarPengguna() {
         setMemuat(false);
       }
     );
+
+    return () => {
+      lepasMandor();
+      lepasUsers();
+    };
   }, []);
 
   async function ubah(uid: string, data: Partial<AppUser>) {
@@ -113,6 +127,31 @@ function DaftarPengguna() {
 
                 {superAdmin && <span className="text-xs text-muted">Super admin, tidak bisa diubah</span>}
               </div>
+
+              {u.role === "MANDOR" && (
+                <div className="mt-4 rounded-lg border border-line p-3">
+                  <label className="mb-1 block text-sm font-medium text-ink" htmlFor={`kar-${u.uid}`}>
+                    Akun ini adalah karyawan
+                  </label>
+                  <select
+                    id={`kar-${u.uid}`}
+                    className="input-dasar max-w-xs"
+                    value={u.employeeId || ""}
+                    onChange={(e) => ubah(u.uid, { employeeId: e.target.value || null })}
+                  >
+                    <option value="">— belum dipilih —</option>
+                    {mandor.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.id})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs text-muted">
+                    Wajib diisi. Tanpa ini, mandor tidak bisa melihat anggota timnya dan tidak bisa
+                    mencatat absensi.
+                  </p>
+                </div>
+              )}
             </div>
           );
         })}
