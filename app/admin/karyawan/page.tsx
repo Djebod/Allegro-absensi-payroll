@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import Guard from "@/components/Guard";
 import Shell from "@/components/Shell";
 import Modal from "@/components/Modal";
+import FotoKaryawan from "@/components/FotoKaryawan";
 import { Field, Pesan } from "@/components/Field";
 import { buatKaryawan, pantauKaryawan, rapikanKode, ubahKaryawan } from "@/lib/data";
 import type { Employee, EmployeeStatus, Position } from "@/types";
@@ -172,18 +173,21 @@ function Isi() {
           {terlihat.map((e) => (
             <div key={e.id} className="kartu">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-muted">
-                    {e.employeeCode} · {e.position}
-                  </p>
-                  <p className="font-semibold text-ink">
-                    {e.name}
-                    {e.nickname ? ` (${e.nickname})` : ""}
-                  </p>
-                  <p className="mt-1 text-sm text-muted">
-                    NIK {e.nik}
-                    {e.phone ? ` · ${e.phone}` : ""}
-                  </p>
+                <div className="flex min-w-0 items-center gap-3">
+                  <FotoKaryawan nama={e.name} url={e.profilePhotoUrl} px={48} />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-muted">
+                      {e.employeeCode} · {e.position}
+                    </p>
+                    <p className="font-semibold text-ink">
+                      {e.name}
+                      {e.nickname ? ` (${e.nickname})` : ""}
+                    </p>
+                    <p className="mt-1 text-sm text-muted">
+                      NIK {e.nik}
+                      {e.phone ? ` · ${e.phone}` : ""}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <span

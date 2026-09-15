@@ -132,7 +132,9 @@ function Isi({ kode }: { kode: string }) {
     if (!pProyek) return setSalah("Proyek wajib dipilih.");
     if (!pSection) return setSalah("Section wajib dipilih.");
     if (!pMandor) return setSalah("Mandor penanggung jawab wajib dipilih.");
-    if (pMandor === kode) return setSalah("Mandor tidak bisa ditugaskan kepada dirinya sendiri.");
+    if (pMandor === kode && karyawan?.position !== "MANDOR") {
+      return setSalah("Hanya karyawan berposisi MANDOR yang boleh jadi penanggung jawab dirinya sendiri.");
+    }
 
     setMenyimpan(true);
     try {
@@ -297,7 +299,14 @@ function Isi({ kode }: { kode: string }) {
       {/* Penugasan */}
       <div className="mt-6 flex items-center justify-between">
         <h2 className="text-lg font-bold text-allegro-700">Penugasan</h2>
-        <button className="btn-utama" onClick={() => setBukaTugas(true)}>
+        <button
+          className="btn-utama"
+          onClick={() => {
+            setSalah(null);
+            if (karyawan.position === "MANDOR" && !pMandor) setPMandor(kode);
+            setBukaTugas(true);
+          }}
+        >
           {tugasBerlaku ? "Pindahkan" : "Tugaskan"}
         </button>
       </div>
@@ -459,6 +468,9 @@ function Isi({ kode }: { kode: string }) {
               onChange={(e) => setPMandor(e.target.value)}
             >
               <option value="">— pilih mandor —</option>
+              {karyawan.position === "MANDOR" && (
+                <option value={kode}>{karyawan.name} (dirinya sendiri)</option>
+              )}
               {mandor
                 .filter((m) => m.status === "ACTIVE" && m.id !== kode)
                 .map((m) => (
@@ -468,6 +480,14 @@ function Isi({ kode }: { kode: string }) {
                 ))}
             </select>
           </Field>
+
+          {karyawan.position === "MANDOR" && (
+            <p className="-mt-2 text-xs text-muted">
+              Mandor umumnya menjadi penanggung jawab dirinya sendiri, karena ia juga mengabsen
+              diri sendiri di lapangan. Pilih mandor lain hanya bila ia bekerja di bawah mandor
+              yang lebih senior.
+            </p>
+          )}
 
           <Field
             label="Berlaku mulai"

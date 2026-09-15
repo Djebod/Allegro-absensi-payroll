@@ -195,7 +195,13 @@ service cloud.firestore {
         && d.projectId is string && d.projectId.size() > 0
         && d.sectionId is string && d.sectionId.size() > 0
         && d.mandorId is string && d.mandorId.size() > 0
-        && d.mandorId != d.employeeId
+        // Penanggung jawab tidak boleh diri sendiri, KECUALI orang itu
+        // memang seorang mandor. Mandor mengabsen dirinya sendiri, dan
+        // kolom inilah yang dipakai untuk menentukan hak bacanya.
+        && (
+          d.mandorId != d.employeeId
+          || get(/databases/$(database)/documents/employees/$(d.employeeId)).data.position == 'MANDOR'
+        )
         && d.effectiveFrom is string && d.effectiveFrom.size() == 10
         && d.status in ['ACTIVE', 'ENDED'];
     }
