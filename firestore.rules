@@ -136,7 +136,9 @@ service cloud.firestore {
       // sedang berjalan; histori lengkapnya ada di employeeAssignments.
       allow read: if isAdmin()
         || isFinance()
-        || (isMandor() && resource.data.currentMandorId == profilSaya().employeeId);
+        || (isMandor()
+            && resource != null
+            && resource.data.currentMandorId == profilSaya().employeeId);
 
       allow create: if isAdmin() && karyawanSah()
         && request.resource.data.employeeCode == employeeId;
@@ -209,7 +211,9 @@ service cloud.firestore {
     match /employeeAssignments/{assignmentId} {
       allow read: if isAdmin()
         || isFinance()
-        || (isMandor() && resource.data.mandorId == profilSaya().employeeId);
+        || (isMandor()
+            && resource != null
+            && resource.data.mandorId == profilSaya().employeeId);
 
       allow create: if isAdmin() && penugasanSah()
         && request.resource.data.status == 'ACTIVE'
@@ -253,9 +257,14 @@ service cloud.firestore {
     }
 
     match /attendance/{absenId} {
+      // Catatan: "resource == null" berarti dokumennya belum ada. Itu
+      // keadaan normal saat absen pertama hari itu diperiksa lebih dulu,
+      // dan harus dijawab "boleh" — bukan dibiarkan jadi galat, karena
+      // galat di dalam rules ikut terbaca sebagai penolakan izin.
       allow read: if isAdmin()
         || isFinance()
-        || (isMandor() && resource.data.mandorId == profilSaya().employeeId);
+        || (isMandor()
+            && (resource == null || resource.data.mandorId == profilSaya().employeeId));
 
       // ID dokumen wajib "<employeeId>_<tanggal>". Inilah yang membuat
       // satu orang mustahil punya dua catatan di hari yang sama, termasuk
