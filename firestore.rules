@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// ============================================================
+//  ABSENSI & PAYROLL PROYEK — Security Rules (Phase 1)
+//  Prinsip: DEFAULT DENY. Semua yang tidak disebut di sini ditolak.
+//  Tampilan/menu yang disembunyikan BUKAN keamanan. Aturan di file
+//  inilah yang benar-benar menjaga data.
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- fungsi bantu ----
+    function emailSuperAdmin() {
+      return 'syam.rakhmany@gmail.com';
+    }
+
+    function sudahLogin() {
+      return request.auth != null;
+    }
+
+    function emailUser() {
+      return request.auth.token.email.lower();
+    }
+
+    function profilSaya() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return sudahLogin()
+        && profilSaya().role == 'ADMIN'
+        && profilSaya().status == 'ACTIVE';
+    }
+
+    // ---- users ----
+    match /users/{uid} {
+
+      // Boleh membaca dokumen sendiri; Admin boleh membaca semua.
+      allow read: if sudahLogin() && (request.auth.uid == uid || isAdmin());
+
+      // Pendaftaran diri sendiri saat login Google pertama kali.
+      // Semua orang masuk sebagai PENDING, kecuali super admin.
+      allow create: if sudahLogin()
+        && request.auth.uid == uid
+        && request.resource.data.email == emailUser()
+        && request.resource.data.projectIds.size() == 0
+        && request.resource.data.sectionIds.size() == 0
+        && (
+          (emailUser() == emailSuperAdmin()
+            && request.resource.data.role == 'ADMIN'
+            && request.resource.data.status == 'ACTIVE')
+          ||
+          (emailUser() != emailSuperAdmin()
+            && request.resource.data.role == 'PENDING'
+            && request.resource.data.status == 'PENDING')
+        );
+
+      // Hanya Admin yang boleh mengubah peran/status.
+      // Email tidak boleh diganti, dan dokumen super admin hanya boleh
+      // disentuh oleh super admin itu sendiri.
+      allow update: if isAdmin()
+        && request.resource.data.email == resource.data.email
+        && (resource.data.email != emailSuperAdmin() || emailUser() == emailSuperAdmin());
+
+      // Histori pengguna tidak dihapus.
+      allow delete: if false;
+    }
+
+    // ---- semua koleksi lain ditolak sampai tahap berikutnya ----
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
