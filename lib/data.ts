@@ -443,27 +443,33 @@ export async function catatSesi(opsi: {
   return NAMA_SESI[opsi.jenis];
 }
 
-/** Rekap absensi satu tanggal untuk Admin dan Finance. */
-export function pantauAbsensiTanggal(
-  tanggal: string,
-  projectId: string | null,
+/**
+ * Rekap absensi satu rentang tanggal untuk Admin dan Finance.
+ *
+ * Saringan proyek sengaja dikerjakan di sisi aplikasi, bukan ditambahkan
+ * ke query. Menggabungkan rentang tanggal dengan kesamaan projectId akan
+ * menuntut composite index di Firestore — satu langkah manual lagi yang
+ * mudah terlupa. Jumlah datanya kecil, jadi menyaring di sini lebih murah
+ * daripada menambah kerumitan.
+ */
+export function pantauAbsensiRentang(
+  dari: string,
+  sampai: string,
   onData: (data: Attendance[]) => void,
   onGagal: () => void
 ) {
-  const dasar = [
-    collection(dbClient(), "attendance"),
-    where("date", "==", tanggal),
-  ] as const;
-
-  const q = projectId
-    ? query(dasar[0], dasar[1], where("projectId", "==", projectId))
-    : query(dasar[0], dasar[1]);
-
   return onSnapshot(
-    q,
+    query(
+      collection(dbClient(), "attendance"),
+      where("date", ">=", dari),
+      where("date", "<=", sampai)
+    ),
     (snap) => {
       const isi = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Attendance, "id">) }));
-      isi.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+      isi.sort(
+        (a, b) =>
+          a.date.localeCompare(b.date) || a.employeeName.localeCompare(b.employeeName)
+      );
       onData(isi);
     },
     onGagal

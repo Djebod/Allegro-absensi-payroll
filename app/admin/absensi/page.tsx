@@ -8,7 +8,8 @@ import Modal from "@/components/Modal";
 import BadgeLokasi from "@/components/BadgeLokasi";
 import FormValidasi from "@/components/FormValidasi";
 import { Pesan } from "@/components/Field";
-import { pantauAbsensiTanggal, pantauKoreksi, semuaProyek, semuaSection, simpanValidasi } from "@/lib/data";
+import { pantauAbsensiRentang, pantauKoreksi, semuaProyek, semuaSection, simpanValidasi } from "@/lib/data";
+import { eksporAbsensi } from "@/lib/ekspor";
 import { useAuth } from "@/lib/auth";
 import { fotoKecil } from "@/lib/cloudinary";
 import {
@@ -31,7 +32,9 @@ function warnaStatus(s: StatusAbsen) {
 }
 
 function Isi() {
-  const [tanggal, setTanggal] = useState(tanggalHariIni());
+  const [dari, setDari] = useState(tanggalHariIni());
+  const [sampai, setSampai] = useState(tanggalHariIni());
+  const [mengekspor, setMengekspor] = useState(false);
   const [filterProyek, setFilterProyek] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusAbsen | "SEMUA">("SEMUA");
 
@@ -52,9 +55,11 @@ function Isi() {
   useEffect(() => {
     setMemuat(true);
     setSalah(null);
-    return pantauAbsensiTanggal(
-      tanggal,
-      filterProyek || null,
+    const awal = dari <= sampai ? dari : sampai;
+    const akhir = dari <= sampai ? sampai : dari;
+    return pantauAbsensiRentang(
+      awal,
+      akhir,
       (d) => {
         setData(d);
         setMemuat(false);
@@ -64,7 +69,7 @@ function Isi() {
         setMemuat(false);
       }
     );
-  }, [tanggal, filterProyek]);
+  }, [dari, sampai]);
 
   const rincian = useMemo(
     () => data.find((a) => a.id === rincianId) || null,
@@ -80,8 +85,11 @@ function Isi() {
   }, [rincianId]);
 
   const terlihat = useMemo(
-    () => (filterStatus === "SEMUA" ? data : data.filter((a) => a.status === filterStatus)),
-    [data, filterStatus]
+    () =>
+      data
+        .filter((a) => !filterProyek || a.projectId === filterProyek)
+        .filter((a) => filterStatus === "SEMUA" || a.status === filterStatus),
+    [data, filterProyek, filterStatus]
   );
 
   const radiusDari = (projectId: string) =>
@@ -114,12 +122,22 @@ function Isi() {
     <>
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-ink">Tanggal</span>
+          <span className="mb-1 block text-sm font-medium text-ink">Dari tanggal</span>
           <input
             type="date"
             className="input-dasar"
-            value={tanggal}
-            onChange={(e) => setTanggal(e.target.value)}
+            value={dari}
+            onChange={(e) => setDari(e.target.value)}
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-ink">Sampai tanggal</span>
+          <input
+            type="date"
+            className="input-dasar"
+            value={sampai}
+            onChange={(e) => setSampai(e.target.value)}
           />
         </label>
 
@@ -153,6 +171,35 @@ function Isi() {
             ))}
           </select>
         </label>
+
+        <button
+          className="btn-utama"
+          disabled={mengekspor || terlihat.length === 0}
+          onClick={async () => {
+            setSalah(null);
+            setMengekspor(true);
+            try {
+              await eksporAbsensi({
+                baris: terlihat.map((a) => ({
+                  absen: a,
+                  namaSection: namaSection(a.sectionId),
+                  radiusMeter: radiusDari(a.projectId),
+                })),
+                dari: dari <= sampai ? dari : sampai,
+                sampai: dari <= sampai ? sampai : dari,
+                namaProyek:
+                  proyek.find((p) => p.id === filterProyek)?.name || "Semua proyek",
+                dibuatOleh: profile?.name || profile?.email || "",
+              });
+            } catch {
+              setSalah("Berkas Excel gagal dibuat. Coba muat ulang halaman lalu ulangi.");
+            } finally {
+              setMengekspor(false);
+            }
+          }}
+        >
+          {mengekspor ? "Menyiapkan…" : "Export Excel"}
+        </button>
       </div>
 
       {salah && (
