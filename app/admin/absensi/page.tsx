@@ -19,6 +19,7 @@ import {
   jamDari,
   selisihJamServerMenit,
   tanggalHariIni,
+  tanggalPendek,
   waktuEfektif,
 } from "@/lib/absensi";
 import type { Attendance, AttendanceCorrection, Project, Section, StatusAbsen } from "@/types";
@@ -209,26 +210,26 @@ function Isi() {
         </div>
       )}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-4">
-        <div className="kartu">
-          <p className="text-xs text-muted">Tercatat</p>
-          <p className="text-xl font-bold text-ink">{data.length} orang</p>
+      <div className="mb-4 flex flex-wrap gap-x-8 gap-y-3 rounded-xl border border-line bg-white px-5 py-3">
+        <div>
+          <p className="text-[11px] text-muted">Tercatat</p>
+          <p className="text-lg font-bold leading-tight text-ink">{terlihat.length} catatan</p>
         </div>
-        <div className="kartu">
-          <p className="text-xs text-muted">Total jam kerja</p>
-          <p className="text-xl font-bold text-ink">{ringkasan.jamKerja}</p>
+        <div>
+          <p className="text-[11px] text-muted">Total jam kerja</p>
+          <p className="text-lg font-bold leading-tight text-ink">{ringkasan.jamKerja}</p>
         </div>
-        <div className="kartu">
-          <p className="text-xs text-muted">Total jam lembur</p>
-          <p className="text-xl font-bold text-ink">{ringkasan.jamLembur}</p>
+        <div>
+          <p className="text-[11px] text-muted">Total jam lembur</p>
+          <p className="text-lg font-bold leading-tight text-ink">{ringkasan.jamLembur}</p>
         </div>
-        <div className="kartu">
-          <p className="text-xs text-muted">Perlu diperiksa</p>
-          <p className="text-xl font-bold text-ink">
+        <div>
+          <p className="text-[11px] text-muted">Perlu diperiksa</p>
+          <p className="text-lg font-bold leading-tight text-ink">
             {ringkasan.luarLokasi + ringkasan.jamMeleset}
-          </p>
-          <p className="mt-1 text-xs text-muted">
-            {ringkasan.luarLokasi} di luar lokasi · {ringkasan.jamMeleset} jam HP meleset
+            <span className="ml-2 text-[11px] font-normal text-muted">
+              {ringkasan.luarLokasi} di luar lokasi · {ringkasan.jamMeleset} jam HP meleset
+            </span>
           </p>
         </div>
       </div>
@@ -253,7 +254,7 @@ function Isi() {
                 <th>Istirahat</th>
                 <th>Pulang</th>
                 <th className="text-right">Jam</th>
-                <th className="text-right">Lembur</th>
+                <th className="text-right">Lbr</th>
                 <th>Status</th>
                 <th>Lokasi</th>
                 <th></th>
@@ -262,19 +263,24 @@ function Isi() {
             <tbody>
               {terlihat.map((a) => (
                 <tr key={a.id}>
-                  <td>
-                    <span className="font-semibold text-ink">{a.employeeName}</span>
-                    <span className="ml-2 text-xs text-muted">{a.employeeId}</span>
+                  <td className="max-w-[190px]">
+                    <p className="truncate font-semibold text-ink" title={a.employeeName}>
+                      {a.employeeName}
+                    </p>
+                    <p className="text-[10px] text-muted">{a.employeeId}</p>
                   </td>
-                  <td className="text-xs text-muted">
-                    {a.projectId} · {namaSection(a.sectionId)}
+                  <td className="max-w-[130px] text-muted">
+                    <p className="truncate" title={`${a.projectId} · ${namaSection(a.sectionId)}`}>
+                      {a.projectId}
+                    </p>
+                    <p className="truncate text-[10px]">{namaSection(a.sectionId)}</p>
                   </td>
-                  <td className="text-xs">{a.date}</td>
-                  <td>{jamDari(waktuEfektif(a.checkIn))}</td>
-                  <td className="text-xs">
+                  <td className="whitespace-nowrap">{tanggalPendek(a.date)}</td>
+                  <td className="whitespace-nowrap">{jamDari(waktuEfektif(a.checkIn))}</td>
+                  <td className="whitespace-nowrap">
                     {jamDari(waktuEfektif(a.breakStart))}–{jamDari(waktuEfektif(a.breakEnd))}
                   </td>
-                  <td>{jamDari(waktuEfektif(a.checkOut))}</td>
+                  <td className="whitespace-nowrap">{jamDari(waktuEfektif(a.checkOut))}</td>
                   <td className="text-right font-semibold text-ink">{a.workHours}</td>
                   <td className="text-right">{a.overtimeHours || "—"}</td>
                   <td>
@@ -286,13 +292,13 @@ function Isi() {
                       />
                     )}
                   </td>
-                  <td>
+                  <td className="whitespace-nowrap">
                     <BadgeLokasi
                       jarakMeter={a.terakhir?.jarakMeter}
                       radiusMeter={radiusDari(a.projectId)}
                     />
                   </td>
-                  <td>
+                  <td className="whitespace-nowrap text-right">
                     <button className="btn-kuning" onClick={() => setRincianId(a.id)}>
                       Rincian
                     </button>
@@ -440,7 +446,11 @@ function Isi() {
 export default function HalamanAbsensiAdmin() {
   return (
     <Guard izinkan={["ADMIN"]}>
-      <Shell judul="Rekap Absensi" keterangan="Catatan absensi harian beserta bukti lokasi dan fotonya.">
+      <Shell
+        judul="Rekap Absensi"
+        keterangan="Catatan absensi harian beserta bukti lokasi dan fotonya."
+        lebar
+      >
         <Isi />
       </Shell>
     </Guard>

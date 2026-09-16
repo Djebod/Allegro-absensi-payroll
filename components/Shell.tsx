@@ -8,19 +8,23 @@ export default function Shell({
   judul,
   keterangan,
   aksi,
+  lebar,
   children,
 }: {
   judul: string;
   keterangan?: string;
   aksi?: React.ReactNode;
+  /** Halaman bertabel butuh ruang lebih supaya tidak perlu digeser. */
+  lebar?: boolean;
   children: React.ReactNode;
 }) {
+  const kotak = lebar ? "max-w-[1400px]" : "max-w-5xl";
   const { profile, keluar } = useAuth();
 
   return (
     <div className="min-h-screen bg-surface">
       <header className="border-b border-line bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
+        <div className={`mx-auto flex ${kotak} items-center justify-between gap-4 px-4 py-3`}>
           <Link href="/" className="flex items-center gap-2.5">
             <Image src="/mark.png" alt="" width={34} height={34} priority />
             <span className="leading-tight">
@@ -40,7 +44,7 @@ export default function Shell({
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-6">
+      <main className={`mx-auto ${kotak} px-4 py-6`}>
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-allegro-700">{judul}</h1>
@@ -51,7 +55,7 @@ export default function Shell({
         {children}
       </main>
 
-      <footer className="mx-auto max-w-5xl px-4 pb-8 pt-2">
+      <footer className={`mx-auto ${kotak} px-4 pb-8 pt-2`}>
         <p className="text-xs text-muted">PT Allegro Global Construction</p>
       </footer>
     </div>

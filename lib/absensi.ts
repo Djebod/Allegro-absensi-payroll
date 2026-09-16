@@ -188,3 +188,15 @@ export function keKotakJam(iso?: string | null): string {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
+
+const BULAN_PENDEK = [
+  "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+  "Jul", "Agu", "Sep", "Okt", "Nov", "Des",
+];
+
+/** "2026-09-15" -> "15 Sep". Menghemat lebar kolom tanpa kehilangan arti. */
+export function tanggalPendek(tanggal: string): string {
+  const [, bulan, hari] = tanggal.split("-");
+  const i = Number(bulan) - 1;
+  return `${Number(hari)} ${BULAN_PENDEK[i] ?? bulan}`;
+}
