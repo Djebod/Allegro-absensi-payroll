@@ -20,13 +20,16 @@ import type {
   AttendanceCorrection,
   Employee,
   EmployeeAssignment,
+  EmployeeLoan,
   EmployeePrivate,
   EventAbsen,
   HasilValidasi,
   JenisSesi,
+  LoanRepayment,
   Project,
   SalaryRate,
   Section,
+  StatusBon,
   TitikAbsen,
 } from "@/types";
 import { gabungTanggalJam, hitungJam, idAbsensi, NAMA_SESI, periksaSesi } from "@/lib/absensi";
@@ -563,4 +566,156 @@ export function pantauKoreksi(
       ),
     onGagal
   );
+}
+
+/* ---------------- Bon karyawan ---------------- */
+
+
+const BON_BERJALAN: StatusBon[] = ["OPEN", "PARTIALLY_PAID"];
+
+export function pantauBon(
+  onData: (data: EmployeeLoan[]) => void,
+  onGagal: () => void
+) {
+  return onSnapshot(
+    collection(dbClient(), "employeeLoans"),
+    (snap) => {
+      const isi = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<EmployeeLoan, "id">) }));
+      isi.sort((a, b) => b.loanDate.localeCompare(a.loanDate));
+      onData(isi);
+    },
+    onGagal
+  );
+}
+
+export function pantauPembayaranBon(
+  loanId: string,
+  onData: (data: LoanRepayment[]) => void,
+  onGagal: () => void
+) {
+  return onSnapshot(
+    query(collection(dbClient(), "loanRepayments"), where("loanId", "==", loanId)),
+    (snap) =>
+      onData(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LoanRepayment, "id">) }))),
+    onGagal
+  );
+}
+
+/**
+ * Membuat bon baru. Penanda bon berjalan dibuat LEBIH DULU: kalau
+ * karyawan itu masih punya bon aktif, Firestore menolak di langkah ini
+ * dan bonnya tidak pernah terbentuk. Urutannya sengaja begitu, supaya
+ * tidak pernah ada bon yatim tanpa penanda.
+ */
+export async function buatBon(data: {
+  karyawan: Employee;
+  jumlah: number;
+  tanggal: string;
+  keterangan: string;
+  oleh: string;
+}) {
+  if (data.jumlah <= 0) throw new Error("Nominal bon harus lebih dari nol.");
+
+  const db = dbClient();
+  const bonRef = doc(collection(db, "employeeLoans"));
+
+  try {
+    await setDoc(doc(db, "loanLocks", data.karyawan.id), {
+      employeeId: data.karyawan.id,
+      loanId: bonRef.id,
+      createdAt: serverTimestamp(),
+    });
+  } catch {
+    throw new Error(
+      `${data.karyawan.name} masih punya bon yang belum lunas. Satu karyawan hanya boleh punya satu bon aktif.`
+    );
+  }
+
+  await setDoc(bonRef, {
+    employeeId: data.karyawan.id,
+    employeeName: data.karyawan.name,
+    originalAmount: data.jumlah,
+    remainingAmount: data.jumlah,
+    loanDate: data.tanggal,
+    description: data.keterangan,
+    status: "OPEN" as StatusBon,
+    createdBy: data.oleh,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return bonRef.id;
+}
+
+/**
+ * Mencatat pembayaran bon. Sisa bon dihitung dari angka yang tersimpan,
+ * bukan dari yang tampil di layar, supaya dua orang yang mencatat hampir
+ * bersamaan tidak saling menimpa hasil.
+ */
+export async function catatPembayaranBon(opsi: {
+  bon: EmployeeLoan;
+  jumlah: number;
+  catatan: string;
+  payrollId: string | null;
+  oleh: string;
+}) {
+  if (opsi.jumlah <= 0) throw new Error("Jumlah pembayaran harus lebih dari nol.");
+
+  const db = dbClient();
+  const ref = doc(db, "employeeLoans", opsi.bon.id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Bon tidak ditemukan.");
+
+  const kini = snap.data() as EmployeeLoan;
+  if (!BON_BERJALAN.includes(kini.status)) throw new Error("Bon ini sudah tidak berjalan.");
+  if (opsi.jumlah > kini.remainingAmount) {
+    throw new Error(
+      `Pembayaran melebihi sisa bon. Sisa sekarang ${kini.remainingAmount.toLocaleString("id-ID")}.`
+    );
+  }
+
+  const sisa = kini.remainingAmount - opsi.jumlah;
+  const status: StatusBon = sisa === 0 ? "PAID" : "PARTIALLY_PAID";
+
+  await setDoc(doc(collection(db, "loanRepayments")), {
+    loanId: opsi.bon.id,
+    employeeId: kini.employeeId,
+    payrollId: opsi.payrollId,
+    amount: opsi.jumlah,
+    catatan: opsi.catatan,
+    createdBy: opsi.oleh,
+    createdAt: serverTimestamp(),
+  });
+
+  await updateDoc(ref, {
+    remainingAmount: sisa,
+    status,
+    updatedAt: serverTimestamp(),
+  });
+
+  // Bon lunas melepaskan penandanya, jadi karyawan boleh berbon lagi.
+  if (sisa === 0) {
+    await deleteDoc(doc(db, "loanLocks", kini.employeeId));
+  }
+
+  return { sisa, status };
+}
+
+export async function batalkanBon(bon: EmployeeLoan, alasan: string, oleh: string) {
+  const db = dbClient();
+  await updateDoc(doc(db, "employeeLoans", bon.id), {
+    status: "CANCELLED" as StatusBon,
+    description: `${bon.description}${bon.description ? " · " : ""}Dibatalkan oleh ${oleh}: ${alasan}`,
+    updatedAt: serverTimestamp(),
+  });
+  await deleteDoc(doc(db, "loanLocks", bon.employeeId));
+}
+
+export async function daftarKaryawanAktif() {
+  const snap = await getDocs(
+    query(collection(dbClient(), "employees"), where("status", "==", "ACTIVE"))
+  );
+  return snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }

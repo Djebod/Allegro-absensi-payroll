@@ -2,9 +2,10 @@ rules_version = '2';
 
 // ============================================================
 //  ABSENSI & PAYROLL PROYEK — Allegro Global Construction
-//  Security Rules — Tahap 6
+//  Security Rules — Tahap 8
 //  users, projects, sections, employees, employeePrivate,
-//  salaryRates, employeeAssignments, attendance, attendanceCorrections
+//  salaryRates, employeeAssignments, attendance, attendanceCorrections,
+//  employeeLoans, loanLocks, loanRepayments
 //
 //  Prinsip: DEFAULT DENY. Semua yang tidak disebut di sini ditolak.
 //  Menu yang disembunyikan di layar BUKAN keamanan. Aturan di file
@@ -324,6 +325,61 @@ service cloud.firestore {
 
       // Jejak audit bersifat tambah-saja. Sekali tertulis, tidak bisa
       // diubah maupun dihapus oleh siapa pun, termasuk Admin.
+      allow update, delete: if false;
+    }
+
+    // ---------- bon karyawan ----------
+    function bonSah() {
+      let d = request.resource.data;
+      return d.employeeId is string && d.employeeId.size() > 0
+        && d.employeeName is string && d.employeeName.size() > 0
+        && d.originalAmount is number && d.originalAmount > 0
+        && d.remainingAmount is number
+        && d.remainingAmount >= 0
+        && d.remainingAmount <= d.originalAmount
+        && d.loanDate is string && d.loanDate.size() == 10
+        && d.status in ['OPEN', 'PARTIALLY_PAID', 'PAID', 'CANCELLED'];
+    }
+
+    match /employeeLoans/{bonId} {
+      // Karyawan tidak punya akses; bon adalah urusan Admin dan Finance.
+      allow read: if isAdmin() || isFinance();
+      allow create: if (isAdmin() || isFinance()) && bonSah();
+
+      // Nominal asli dan pemiliknya tidak boleh berubah. Yang boleh
+      // berubah hanya sisa dan statusnya, karena itulah yang bergerak
+      // setiap kali ada pembayaran.
+      allow update: if (isAdmin() || isFinance()) && bonSah()
+        && request.resource.data.employeeId == resource.data.employeeId
+        && request.resource.data.originalAmount == resource.data.originalAmount
+        && request.resource.data.loanDate == resource.data.loanDate;
+
+      // Bon tidak dihapus. Yang salah dibatalkan, jejaknya tetap ada.
+      allow delete: if false;
+    }
+
+    // ---------- loanLocks (penjaga satu bon aktif) ----------
+    // ID dokumennya adalah kode karyawan. Karena Firestore menolak
+    // "create" pada dokumen yang sudah ada, bon aktif kedua mustahil
+    // terbentuk - bahkan bila dua orang menyimpan pada detik yang sama.
+    match /loanLocks/{employeeId} {
+      allow read: if isAdmin() || isFinance();
+      allow create: if (isAdmin() || isFinance())
+        && request.resource.data.employeeId == employeeId;
+      allow update: if false;
+      // Dihapus saat bon lunas atau dibatalkan, supaya karyawan itu
+      // boleh mengajukan bon berikutnya.
+      allow delete: if isAdmin() || isFinance();
+    }
+
+    // ---------- loanRepayments ----------
+    match /loanRepayments/{bayarId} {
+      allow read: if isAdmin() || isFinance();
+      allow create: if (isAdmin() || isFinance())
+        && request.resource.data.loanId is string
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0;
+      // Catatan pembayaran bersifat tambah-saja, sama seperti jejak audit.
       allow update, delete: if false;
     }
 

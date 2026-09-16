@@ -373,6 +373,7 @@ function Isi() {
                     </div>
                   </div>
 
+                  {profile?.role === "ADMIN" && (
                   <FormValidasi
                     absen={rincian}
                     jenis={jenis}
@@ -388,6 +389,7 @@ function Isi() {
                       });
                     }}
                   />
+                  )}
                 </div>
               );
             })}
@@ -445,7 +447,7 @@ function Isi() {
 
 export default function HalamanAbsensiAdmin() {
   return (
-    <Guard izinkan={["ADMIN"]}>
+    <Guard izinkan={["ADMIN", "FINANCE"]}>
       <Shell
         judul="Rekap Absensi"
         keterangan="Catatan absensi harian beserta bukti lokasi dan fotonya."

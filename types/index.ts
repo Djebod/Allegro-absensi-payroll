@@ -236,3 +236,45 @@ export interface Attendance {
   createdAt?: unknown;
   updatedAt?: unknown;
 }
+
+/* ---------------- Bon karyawan ---------------- */
+
+export type StatusBon = "OPEN" | "PARTIALLY_PAID" | "PAID" | "CANCELLED";
+
+export interface EmployeeLoan {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  originalAmount: number;
+  remainingAmount: number;
+  loanDate: string;
+  description: string;
+  status: StatusBon;
+  createdBy: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+/**
+ * Penanda bahwa seorang karyawan sedang punya bon berjalan.
+ * ID dokumennya adalah kode karyawan, sehingga Firestore sendiri yang
+ * menolak bon aktif kedua — bukan pemeriksaan di layar yang bisa
+ * kebobolan kalau dua orang menyimpan bersamaan.
+ */
+export interface LoanLock {
+  employeeId: string;
+  loanId: string;
+  createdAt?: unknown;
+}
+
+export interface LoanRepayment {
+  id: string;
+  loanId: string;
+  employeeId: string;
+  /** Kosong bila dibayar tunai di luar payroll. */
+  payrollId: string | null;
+  amount: number;
+  catatan: string;
+  createdBy: string;
+  createdAt?: unknown;
+}

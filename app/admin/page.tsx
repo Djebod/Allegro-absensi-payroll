@@ -9,7 +9,7 @@ const menu = [
   { judul: "Proyek & Section", ket: "Daftar proyek Allegro, titik lokasi, dan pembagian seksinya.", href: "/admin/proyek", siap: true },
   { judul: "Data Karyawan", ket: "Mandor, tukang, dan kenek yang bekerja di proyek.", href: "/admin/karyawan", siap: true },
   { judul: "Absensi", ket: "Rekap harian beserta bukti lokasi dan foto.", href: "/admin/absensi", siap: true },
-  { judul: "Bon Karyawan", ket: "Pinjaman karyawan dan potongannya.", href: "#", siap: false },
+  { judul: "Bon Karyawan", ket: "Pinjaman karyawan dan pelunasannya.", href: "/bon", siap: true },
   { judul: "Payroll Mingguan", ket: "Perhitungan gaji per proyek dan seksi.", href: "#", siap: false },
 ];
 
