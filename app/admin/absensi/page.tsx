@@ -19,6 +19,7 @@ import {
   jamDari,
   selisihJamServerMenit,
   tanggalHariIni,
+  waktuEfektif,
 } from "@/lib/absensi";
 import type { Attendance, AttendanceCorrection, Project, Section, StatusAbsen } from "@/types";
 
@@ -237,55 +238,76 @@ function Isi() {
       ) : terlihat.length === 0 ? (
         <div className="kartu text-center">
           <p className="text-sm text-muted">
-            Tidak ada absensi pada tanggal dan saringan ini.
+            Tidak ada absensi pada rentang tanggal dan saringan ini.
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {terlihat.map((a) => (
-            <div key={a.id} className="kartu">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-semibold text-ink">{a.employeeName}</p>
-                  <p className="text-xs text-muted">
-                    {a.employeeId} · {a.projectId} · {namaSection(a.sectionId)}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <BadgeLokasi
-                    jarakMeter={a.terakhir?.jarakMeter}
-                    radiusMeter={radiusDari(a.projectId)}
-                  />
-                  <span className={`label-status ${warnaStatus(a.status)}`}>{a.status}</span>
-                </div>
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                <span>Masuk {jamDari(a.checkIn?.waktu)}</span>
-                <span>
-                  Istirahat {jamDari(a.breakStart?.waktu)}–{jamDari(a.breakEnd?.waktu)}
-                </span>
-                <span>Pulang {jamDari(a.checkOut?.waktu)}</span>
-                <span className="font-semibold text-ink">{a.workHours} jam kerja</span>
-                {a.overtimeHours > 0 && (
-                  <span className="font-semibold text-ink">{a.overtimeHours} jam lembur</span>
-                )}
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button className="btn-ringan" onClick={() => setRincianId(a.id)}>
-                  Rincian, foto & validasi
-                </button>
-                {a.isOverridden && (
-                  <span className="label-status bg-kuning-400/40 text-allegro-700">
-                    Ada koreksi Admin
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
+        <div className="overflow-x-auto rounded-xl border border-line">
+          <table className="tabel-padat">
+            <thead>
+              <tr>
+                <th>Nama</th>
+                <th>Proyek</th>
+                <th>Tanggal</th>
+                <th>Masuk</th>
+                <th>Istirahat</th>
+                <th>Pulang</th>
+                <th className="text-right">Jam</th>
+                <th className="text-right">Lembur</th>
+                <th>Status</th>
+                <th>Lokasi</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {terlihat.map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    <span className="font-semibold text-ink">{a.employeeName}</span>
+                    <span className="ml-2 text-xs text-muted">{a.employeeId}</span>
+                  </td>
+                  <td className="text-xs text-muted">
+                    {a.projectId} · {namaSection(a.sectionId)}
+                  </td>
+                  <td className="text-xs">{a.date}</td>
+                  <td>{jamDari(waktuEfektif(a.checkIn))}</td>
+                  <td className="text-xs">
+                    {jamDari(waktuEfektif(a.breakStart))}–{jamDari(waktuEfektif(a.breakEnd))}
+                  </td>
+                  <td>{jamDari(waktuEfektif(a.checkOut))}</td>
+                  <td className="text-right font-semibold text-ink">{a.workHours}</td>
+                  <td className="text-right">{a.overtimeHours || "—"}</td>
+                  <td>
+                    <span className={`label-status ${warnaStatus(a.status)}`}>{a.status}</span>
+                    {a.isOverridden && (
+                      <span
+                        className="ml-1 inline-block h-2 w-2 rounded-full bg-kuning-500 align-middle"
+                        title="Ada koreksi Admin"
+                      />
+                    )}
+                  </td>
+                  <td>
+                    <BadgeLokasi
+                      jarakMeter={a.terakhir?.jarakMeter}
+                      radiusMeter={radiusDari(a.projectId)}
+                    />
+                  </td>
+                  <td>
+                    <button className="btn-kuning" onClick={() => setRincianId(a.id)}>
+                      Rincian
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
+
+      <p className="mt-2 text-xs text-muted">
+        Titik kuning di kolom Status menandai catatan yang sudah dikoreksi Admin. Jam yang tampil
+        adalah jam setelah koreksi.
+      </p>
 
       <Modal
         judul={rincian ? `${rincian.employeeName} · ${rincian.date}` : ""}
