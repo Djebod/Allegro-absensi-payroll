@@ -36,7 +36,7 @@ import type {
   TitikAbsen,
 } from "@/types";
 import { gabungTanggalJam, hitungJam, idAbsensi, NAMA_SESI, periksaSesi } from "@/lib/absensi";
-import { segarkanItem } from "@/lib/payroll";
+import { hitungUpahKaryawan, segarkanItem } from "@/lib/payroll";
 
 /**
  * Kode dipakai sebagai ID dokumen, jadi harus dirapikan lebih dulu:
@@ -957,4 +957,127 @@ export async function kembalikanKeDraft(payroll: Payroll) {
     status: "DRAFT" as StatusPayroll,
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * Menyusun baris payroll dari absensi satu periode.
+ * Dipakai bersama oleh "hitung baru" dan "hitung ulang", supaya
+ * keduanya mustahil memakai aturan yang berbeda.
+ */
+export async function susunItemPayroll(opsi: {
+  projectId: string;
+  sectionId: string;
+  periodStart: string;
+  periodEnd: string;
+}) {
+  const [absensi, karyawan, tarif, bon] = await Promise.all([
+    ambilAbsensiRentang(opsi.periodStart, opsi.periodEnd),
+    semuaKaryawan(),
+    semuaTarif(),
+    bonBerjalan(),
+  ]);
+
+  // Karyawan diambil dari absensinya, bukan dari penugasan saat ini.
+  // Absensi menyimpan proyek dan section pada saat kejadian.
+  const dipakai = absensi.filter(
+    (a) => a.projectId === opsi.projectId && a.sectionId === opsi.sectionId
+  );
+
+  const perOrang = new Map<string, Attendance[]>();
+  dipakai.forEach((a) => {
+    const kumpul = perOrang.get(a.employeeId) || [];
+    kumpul.push(a);
+    perOrang.set(a.employeeId, kumpul);
+  });
+
+  const items: Omit<PayrollItem, "id" | "payrollId" | "createdAt">[] = [];
+  const masalah: string[] = [];
+
+  for (const [employeeId, absennya] of perOrang) {
+    const orang = karyawan.find((k) => k.id === employeeId);
+    if (!orang) {
+      masalah.push(`Data karyawan ${employeeId} tidak ditemukan, dilewati.`);
+      continue;
+    }
+    const hasil = hitungUpahKaryawan({
+      karyawan: orang,
+      absensi: absennya,
+      tarif: tarif.filter((t) => t.employeeId === employeeId),
+      sisaBon: bon.find((b) => b.employeeId === employeeId)?.remainingAmount || 0,
+    });
+    items.push(hasil.item);
+    hasil.masalah.forEach((m) => masalah.push(`${orang.name} — ${m}`));
+  }
+
+  items.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+  return { items, masalah };
+}
+
+async function hapusSemuaItem(payrollId: string) {
+  const db = dbClient();
+  const snap = await getDocs(
+    query(collection(db, "payrollItems"), where("payrollId", "==", payrollId))
+  );
+  for (const d of snap.docs) {
+    await deleteDoc(d.ref);
+  }
+}
+
+/**
+ * Menghitung ulang payroll dari absensi terbaru. Hanya untuk DRAFT.
+ * Berguna setelah Admin membetulkan absensi yang keliru: tidak perlu
+ * membuat periode baru, cukup hitung ulang yang ini.
+ */
+export async function hitungUlangPayroll(payroll: Payroll) {
+  if (payroll.status !== "DRAFT") {
+    throw new Error("Hanya payroll berstatus DRAFT yang bisa dihitung ulang.");
+  }
+
+  const { items, masalah } = await susunItemPayroll({
+    projectId: payroll.projectId,
+    sectionId: payroll.sectionId,
+    periodStart: payroll.periodStart,
+    periodEnd: payroll.periodEnd,
+  });
+
+  if (items.length === 0) {
+    throw new Error("Tidak ada absensi pada section dan periode ini, jadi tidak ada yang dihitung.");
+  }
+
+  const db = dbClient();
+  await hapusSemuaItem(payroll.id);
+
+  for (const item of items) {
+    await setDoc(doc(db, "payrollItems", `${payroll.id}__${item.employeeId}`), {
+      ...item,
+      payrollId: payroll.id,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  await updateDoc(doc(db, "payroll", payroll.id), {
+    totalEmployees: items.length,
+    totalGrossPay: items.reduce((t, i) => t + i.grossPay, 0),
+    totalLoanDeduction: items.reduce((t, i) => t + i.loanDeduction, 0),
+    totalOtherDeduction: items.reduce((t, i) => t + i.otherDeduction, 0),
+    totalNetPay: items.reduce((t, i) => t + i.netPay, 0),
+    updatedAt: serverTimestamp(),
+  });
+
+  return { jumlah: items.length, masalah };
+}
+
+/**
+ * Menghapus payroll beserta rinciannya. Hanya untuk DRAFT.
+ * Sesudah disahkan, payroll tidak pernah bisa dihapus — itu catatan
+ * pembayaran upah, dan menghapusnya berarti menghapus bukti.
+ */
+export async function hapusPayroll(payroll: Payroll) {
+  if (payroll.status !== "DRAFT") {
+    throw new Error(
+      "Hanya payroll berstatus DRAFT yang bisa dihapus. Kembalikan dulu ke DRAFT bila masih REVIEW."
+    );
+  }
+  await hapusSemuaItem(payroll.id);
+  await deleteDoc(doc(dbClient(), "payroll", payroll.id));
 }

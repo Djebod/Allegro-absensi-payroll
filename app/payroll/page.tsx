@@ -8,16 +8,13 @@ import Modal from "@/components/Modal";
 import { Field, Pesan } from "@/components/Field";
 import { useAuth } from "@/lib/auth";
 import {
-  ambilAbsensiRentang,
-  bonBerjalan,
   buatPayroll,
   pantauPayroll,
-  semuaKaryawan,
   semuaProyek,
   semuaSection,
-  semuaTarif,
+  susunItemPayroll,
 } from "@/lib/data";
-import { hitungUpahKaryawan, seninMingguIni, tambahHari } from "@/lib/payroll";
+import { seninMingguIni, tambahHari } from "@/lib/payroll";
 import { keRupiah, rupiahPenuh } from "@/lib/rupiah";
 import { tanggalPendek } from "@/lib/absensi";
 import type { Payroll, Project, Section, StatusPayroll } from "@/types";
@@ -75,56 +72,19 @@ function Isi() {
 
     setSibuk(true);
     try {
-      const [absensi, karyawan, tarif, bon] = await Promise.all([
-        ambilAbsensiRentang(pMulai, pSelesai),
-        semuaKaryawan(),
-        semuaTarif(),
-        bonBerjalan(),
-      ]);
-
-      // Karyawan diambil dari absensinya, bukan dari penugasan saat ini.
-      // Absensi menyimpan proyek dan section pada saat kejadian, jadi
-      // orang yang pindah section di tengah periode tetap terhitung di
-      // tempat ia benar-benar bekerja hari itu.
-      const dipakai = absensi.filter(
-        (a) => a.projectId === pProyek && a.sectionId === pSection
-      );
-
-      if (dipakai.length === 0) {
-        setSibuk(false);
-        return setSalah("Tidak ada absensi pada section dan periode ini.");
-      }
-
-      const perOrang = new Map<string, typeof dipakai>();
-      dipakai.forEach((a) => {
-        const kumpul = perOrang.get(a.employeeId) || [];
-        kumpul.push(a);
-        perOrang.set(a.employeeId, kumpul);
+      const { items, masalah } = await susunItemPayroll({
+        projectId: pProyek,
+        sectionId: pSection,
+        periodStart: pMulai,
+        periodEnd: pSelesai,
       });
 
-      const items = [];
-      const semuaMasalah: string[] = [];
-
-      for (const [employeeId, absennya] of perOrang) {
-        const orang = karyawan.find((k) => k.id === employeeId);
-        if (!orang) {
-          semuaMasalah.push(`Data karyawan ${employeeId} tidak ditemukan, dilewati.`);
-          continue;
-        }
-        const hasil = hitungUpahKaryawan({
-          karyawan: orang,
-          absensi: absennya,
-          tarif: tarif.filter((t) => t.employeeId === employeeId),
-          sisaBon: bon.find((b) => b.employeeId === employeeId)?.remainingAmount || 0,
-        });
-        items.push(hasil.item);
-        hasil.masalah.forEach((m) => semuaMasalah.push(`${orang.name} — ${m}`));
-      }
-
       if (items.length === 0) {
-        setCatatan(semuaMasalah);
+        setCatatan(masalah);
         setSibuk(false);
-        return setSalah("Tidak ada baris yang bisa dihitung. Periksa catatan di bawah.");
+        return setSalah(
+          "Tidak ada absensi pada section dan periode ini, jadi tidak ada yang bisa dihitung."
+        );
       }
 
       const namaSection = sections.find((s) => s.id === pSection)?.name || pSection;
@@ -139,7 +99,7 @@ function Isi() {
       });
 
       setBuka(false);
-      setCatatan(semuaMasalah);
+      setCatatan(masalah);
       window.location.href = `/payroll/${id}`;
     } catch (e) {
       setSalah(e instanceof Error ? e.message : "Payroll gagal dibuat.");

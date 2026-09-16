@@ -10,6 +10,8 @@ import { Field, Pesan } from "@/components/Field";
 import { useAuth } from "@/lib/auth";
 import {
   ambilPayroll,
+  hapusPayroll,
+  hitungUlangPayroll,
   kembalikanKeDraft,
   majukanStatusPayroll,
   pantauItemPayroll,
@@ -53,6 +55,8 @@ function Isi({ id }: { id: string }) {
   const [uCatatan, setUCatatan] = useState("");
 
   const [konfirmasi, setKonfirmasi] = useState(false);
+  const [konfirmasiHapus, setKonfirmasiHapus] = useState(false);
+  const [catatanUlang, setCatatanUlang] = useState<string[]>([]);
 
   async function muat() {
     setPayroll(await ambilPayroll(id));
@@ -220,10 +224,51 @@ function Isi({ id }: { id: string }) {
             Export Excel
           </button>
 
+          {payroll.status === "DRAFT" && (
+            <>
+              <button
+                className="btn-ringan"
+                disabled={sibuk}
+                onClick={async () => {
+                  setSibuk(true);
+                  setSalah(null);
+                  setCatatanUlang([]);
+                  try {
+                    const hasil = await hitungUlangPayroll(payroll!);
+                    await muat();
+                    setCatatanUlang(hasil.masalah);
+                    setPesan(`Dihitung ulang dari absensi terbaru · ${hasil.jumlah} karyawan.`);
+                  } catch (e) {
+                    setSalah(e instanceof Error ? e.message : "Gagal menghitung ulang.");
+                  } finally {
+                    setSibuk(false);
+                  }
+                }}
+              >
+                Hitung ulang
+              </button>
+
+              <button
+                className="btn-ringan text-bahaya"
+                disabled={sibuk}
+                onClick={() => setKonfirmasiHapus(true)}
+              >
+                Hapus payroll
+              </button>
+            </>
+          )}
+
           <Link href="/payroll" className="btn-ringan">
             Daftar payroll
           </Link>
         </div>
+
+        {payroll.status !== "DRAFT" && payroll.status !== "REVIEW" && (
+          <p className="mt-3 text-xs text-muted">
+            Payroll yang sudah disahkan tidak bisa diubah maupun dihapus. Ini catatan pembayaran
+            upah, jadi jejaknya harus tetap ada.
+          </p>
+        )}
       </div>
 
       {salah && (
@@ -244,6 +289,19 @@ function Isi({ id }: { id: string }) {
             isi="Ada karyawan yang upah bersihnya nol atau minus karena potongan. Periksa kembali sebelum disahkan."
           />
         </div>
+      )}
+
+      {catatanUlang.length > 0 && (
+        <details className="kartu mt-4" open>
+          <summary className="cursor-pointer text-sm font-semibold text-ink">
+            Catatan perhitungan ({catatanUlang.length})
+          </summary>
+          <ul className="mt-2 space-y-1 text-xs text-muted">
+            {catatanUlang.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </details>
       )}
 
       <div className="mt-4 overflow-x-auto rounded-xl border border-line">
@@ -400,6 +458,49 @@ function Isi({ id }: { id: string }) {
             </button>
           </div>
         )}
+      </Modal>
+
+      {/* Konfirmasi hapus */}
+      <Modal
+        judul="Hapus payroll ini"
+        terbuka={konfirmasiHapus}
+        onTutup={() => setKonfirmasiHapus(false)}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Seluruh rincian {payroll.totalEmployees} karyawan pada periode ini akan dihapus dan
+            tidak bisa dikembalikan. Data absensi, tarif, dan bon tidak tersentuh — jadi periode
+            ini bisa dihitung ulang kapan saja dari awal.
+          </p>
+          <p className="text-sm text-muted">
+            Kalau yang keliru cuma angkanya, <strong className="text-ink">Hitung ulang</strong>{" "}
+            lebih tepat daripada menghapus.
+          </p>
+          <div className="flex gap-2">
+            <button
+              className="btn-utama flex-1"
+              disabled={sibuk}
+              onClick={async () => {
+                setSibuk(true);
+                setSalah(null);
+                try {
+                  await hapusPayroll(payroll!);
+                  window.location.href = "/payroll";
+                } catch (e) {
+                  setSalah(e instanceof Error ? e.message : "Payroll gagal dihapus.");
+                  setKonfirmasiHapus(false);
+                } finally {
+                  setSibuk(false);
+                }
+              }}
+            >
+              {sibuk ? "Menghapus…" : "Ya, hapus"}
+            </button>
+            <button className="btn-ringan" onClick={() => setKonfirmasiHapus(false)}>
+              Batal
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Konfirmasi pengesahan */}

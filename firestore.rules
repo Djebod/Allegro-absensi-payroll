@@ -421,7 +421,11 @@ service cloud.firestore {
         && request.resource.data.periodStart == resource.data.periodStart
         && request.resource.data.periodEnd == resource.data.periodEnd;
 
-      allow delete: if false;
+      // Boleh dihapus hanya selagi DRAFT, untuk membatalkan salah hitung.
+      // Sesudah disahkan, payroll adalah catatan pembayaran upah -
+      // menghapusnya berarti menghapus bukti, jadi tidak diizinkan
+      // walaupun oleh Admin.
+      allow delete: if (isAdmin() || isFinance()) && resource.data.status == 'DRAFT';
     }
 
     // ---------- payrollItems ----------
