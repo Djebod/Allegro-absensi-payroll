@@ -26,13 +26,17 @@ import type {
   HasilValidasi,
   JenisSesi,
   LoanRepayment,
+  Payroll,
+  PayrollItem,
   Project,
   SalaryRate,
   Section,
   StatusBon,
+  StatusPayroll,
   TitikAbsen,
 } from "@/types";
 import { gabungTanggalJam, hitungJam, idAbsensi, NAMA_SESI, periksaSesi } from "@/lib/absensi";
+import { segarkanItem } from "@/lib/payroll";
 
 /**
  * Kode dipakai sebagai ID dokumen, jadi harus dirapikan lebih dulu:
@@ -718,4 +722,239 @@ export async function daftarKaryawanAktif() {
   return snap.docs
     .map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/* ---------------- Payroll mingguan ---------------- */
+
+
+export function idPayroll(projectId: string, sectionId: string, periodStart: string): string {
+  return `${projectId}__${sectionId}__${periodStart}`;
+}
+
+export function pantauPayroll(
+  onData: (data: Payroll[]) => void,
+  onGagal: () => void
+) {
+  return onSnapshot(
+    collection(dbClient(), "payroll"),
+    (snap) => {
+      const isi = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Payroll, "id">) }));
+      isi.sort((a, b) => b.periodStart.localeCompare(a.periodStart));
+      onData(isi);
+    },
+    onGagal
+  );
+}
+
+export async function ambilPayroll(id: string): Promise<Payroll | null> {
+  const snap = await getDoc(doc(dbClient(), "payroll", id));
+  return snap.exists() ? { id: snap.id, ...(snap.data() as Omit<Payroll, "id">) } : null;
+}
+
+export function pantauItemPayroll(
+  payrollId: string,
+  onData: (data: PayrollItem[]) => void,
+  onGagal: () => void
+) {
+  return onSnapshot(
+    query(collection(dbClient(), "payrollItems"), where("payrollId", "==", payrollId)),
+    (snap) => {
+      const isi = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PayrollItem, "id">) }));
+      isi.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+      onData(isi);
+    },
+    onGagal
+  );
+}
+
+/* --- bahan perhitungan --- */
+
+export async function ambilAbsensiRentang(dari: string, sampai: string): Promise<Attendance[]> {
+  const snap = await getDocs(
+    query(
+      collection(dbClient(), "attendance"),
+      where("date", ">=", dari),
+      where("date", "<=", sampai)
+    )
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Attendance, "id">) }));
+}
+
+export async function semuaKaryawan(): Promise<Employee[]> {
+  const snap = await getDocs(collection(dbClient(), "employees"));
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }));
+}
+
+export async function semuaTarif(): Promise<SalaryRate[]> {
+  const snap = await getDocs(collection(dbClient(), "salaryRates"));
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SalaryRate, "id">) }));
+}
+
+export async function bonBerjalan(): Promise<EmployeeLoan[]> {
+  const snap = await getDocs(
+    query(collection(dbClient(), "employeeLoans"), where("status", "in", ["OPEN", "PARTIALLY_PAID"]))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<EmployeeLoan, "id">) }));
+}
+
+/* --- menyimpan --- */
+
+function jumlahkan(items: Omit<PayrollItem, "id" | "payrollId" | "createdAt">[]) {
+  return {
+    totalEmployees: items.length,
+    totalGrossPay: items.reduce((t, i) => t + i.grossPay, 0),
+    totalLoanDeduction: items.reduce((t, i) => t + i.loanDeduction, 0),
+    totalOtherDeduction: items.reduce((t, i) => t + i.otherDeduction, 0),
+    totalNetPay: items.reduce((t, i) => t + i.netPay, 0),
+  };
+}
+
+/**
+ * Membuat payroll baru. ID dokumennya gabungan proyek, section, dan
+ * tanggal mulai — jadi satu periode tidak mungkin terhitung dua kali
+ * untuk section yang sama, bahkan bila dua orang menekan tombol
+ * bersamaan.
+ */
+export async function buatPayroll(opsi: {
+  projectId: string;
+  sectionId: string;
+  sectionName: string;
+  periodStart: string;
+  periodEnd: string;
+  items: Omit<PayrollItem, "id" | "payrollId" | "createdAt">[];
+  oleh: string;
+}) {
+  const db = dbClient();
+  const id = idPayroll(opsi.projectId, opsi.sectionId, opsi.periodStart);
+  const ref = doc(db, "payroll", id);
+
+  const ada = await getDoc(ref);
+  if (ada.exists()) {
+    throw new Error(
+      "Payroll untuk section dan periode ini sudah pernah dibuat. Buka payroll yang ada, atau hitung ulang dari sana."
+    );
+  }
+
+  await setDoc(ref, {
+    projectId: opsi.projectId,
+    sectionId: opsi.sectionId,
+    sectionName: opsi.sectionName,
+    periodStart: opsi.periodStart,
+    periodEnd: opsi.periodEnd,
+    status: "DRAFT" as StatusPayroll,
+    bonDiproses: false,
+    createdBy: opsi.oleh,
+    approvedBy: null,
+    ...jumlahkan(opsi.items),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  for (const item of opsi.items) {
+    await setDoc(doc(db, "payrollItems", `${id}__${item.employeeId}`), {
+      ...item,
+      payrollId: id,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  return id;
+}
+
+/** Menyegarkan angka total di dokumen induk setelah satu baris diubah. */
+async function segarkanTotal(payrollId: string) {
+  const db = dbClient();
+  const snap = await getDocs(
+    query(collection(db, "payrollItems"), where("payrollId", "==", payrollId))
+  );
+  const items = snap.docs.map((d) => d.data() as PayrollItem);
+  await updateDoc(doc(db, "payroll", payrollId), {
+    totalEmployees: items.length,
+    totalGrossPay: items.reduce((t, i) => t + i.grossPay, 0),
+    totalLoanDeduction: items.reduce((t, i) => t + i.loanDeduction, 0),
+    totalOtherDeduction: items.reduce((t, i) => t + i.otherDeduction, 0),
+    totalNetPay: items.reduce((t, i) => t + i.netPay, 0),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function ubahItemPayroll(
+  item: PayrollItem,
+  ubahan: Partial<Pick<PayrollItem, "additionalPay" | "loanDeduction" | "otherDeduction" | "catatan">>
+) {
+  const baru = segarkanItem({ ...item, ...ubahan });
+  await updateDoc(doc(dbClient(), "payrollItems", item.id), {
+    additionalPay: baru.additionalPay,
+    loanDeduction: baru.loanDeduction,
+    otherDeduction: baru.otherDeduction,
+    catatan: baru.catatan,
+    grossPay: baru.grossPay,
+    netPay: baru.netPay,
+  });
+  await segarkanTotal(item.payrollId);
+  return baru;
+}
+
+const URUTAN_STATUS: StatusPayroll[] = ["DRAFT", "REVIEW", "APPROVED", "PAID", "LOCKED"];
+
+export function statusBerikut(status: StatusPayroll): StatusPayroll | null {
+  const i = URUTAN_STATUS.indexOf(status);
+  return i >= 0 && i < URUTAN_STATUS.length - 1 ? URUTAN_STATUS[i + 1] : null;
+}
+
+/**
+ * Memindahkan status payroll. Saat mencapai APPROVED, potongan bon
+ * dibukukan sebagai pembayaran — sekali saja, dijaga penanda bonDiproses,
+ * supaya menekan tombolnya dua kali tidak memotong bon dua kali.
+ */
+export async function majukanStatusPayroll(payroll: Payroll, oleh: string) {
+  const baru = statusBerikut(payroll.status);
+  if (!baru) throw new Error("Payroll sudah terkunci.");
+
+  const db = dbClient();
+
+  if (baru === "APPROVED" && !payroll.bonDiproses) {
+    const snap = await getDocs(
+      query(collection(db, "payrollItems"), where("payrollId", "==", payroll.id))
+    );
+    const daftarBon = await bonBerjalan();
+
+    for (const d of snap.docs) {
+      const item = d.data() as PayrollItem;
+      if (!item.loanDeduction || item.loanDeduction <= 0) continue;
+
+      const bon = daftarBon.find((b) => b.employeeId === item.employeeId);
+      if (!bon) continue;
+
+      const dipotong = Math.min(item.loanDeduction, bon.remainingAmount);
+      if (dipotong <= 0) continue;
+
+      await catatPembayaranBon({
+        bon,
+        jumlah: dipotong,
+        catatan: `Potongan payroll ${payroll.periodStart} sampai ${payroll.periodEnd}`,
+        payrollId: payroll.id,
+        oleh,
+      });
+    }
+  }
+
+  await updateDoc(doc(db, "payroll", payroll.id), {
+    status: baru,
+    bonDiproses: payroll.bonDiproses || baru === "APPROVED",
+    approvedBy: baru === "APPROVED" ? oleh : payroll.approvedBy ?? null,
+    updatedAt: serverTimestamp(),
+  });
+
+  return baru;
+}
+
+export async function kembalikanKeDraft(payroll: Payroll) {
+  if (payroll.status !== "REVIEW") {
+    throw new Error("Hanya payroll berstatus REVIEW yang bisa dikembalikan ke DRAFT.");
+  }
+  await updateDoc(doc(dbClient(), "payroll", payroll.id), {
+    status: "DRAFT" as StatusPayroll,
+    updatedAt: serverTimestamp(),
+  });
 }

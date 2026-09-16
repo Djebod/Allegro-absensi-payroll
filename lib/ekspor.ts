@@ -1,7 +1,7 @@
 "use client";
 
 import { NAMA_SESI, URUTAN_SESI, jamDari, waktuEfektif } from "@/lib/absensi";
-import type { Attendance, JenisSesi } from "@/types";
+import type { Attendance, JenisSesi, Payroll, PayrollItem } from "@/types";
 
 const TEAL = "FF19404F";
 const KUNING = "FFFAD131";
@@ -212,6 +212,161 @@ export async function eksporAbsensi(opsi: {
   const tautan = document.createElement("a");
   tautan.href = URL.createObjectURL(berkas);
   tautan.download = nama;
+  tautan.click();
+  URL.revokeObjectURL(tautan.href);
+}
+
+/* ---------------- Ekspor payroll ---------------- */
+
+
+export async function eksporPayroll(opsi: {
+  payroll: Payroll;
+  items: PayrollItem[];
+  dibuatOleh: string;
+}) {
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Allegro Global Construction";
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet("Payroll", {
+    views: [{ state: "frozen", ySplit: 7 }],
+    pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+
+  const KOLOM = [
+    { header: "Kode", key: "kode", width: 12 },
+    { header: "Nama", key: "nama", width: 26 },
+    { header: "Posisi", key: "posisi", width: 10 },
+    { header: "Mode", key: "mode", width: 9 },
+    { header: "Hari", key: "hari", width: 7 },
+    { header: "Jam", key: "jam", width: 7 },
+    { header: "Lembur", key: "lembur", width: 8 },
+    { header: "Tarif harian", key: "tarifHarian", width: 13 },
+    { header: "Tarif per jam", key: "tarifJam", width: 13 },
+    { header: "Tarif lembur", key: "tarifLembur", width: 13 },
+    { header: "Upah pokok", key: "pokok", width: 14 },
+    { header: "Upah lembur", key: "upahLembur", width: 14 },
+    { header: "Tambahan", key: "tambahan", width: 13 },
+    { header: "Upah kotor", key: "kotor", width: 14 },
+    { header: "Potongan bon", key: "bon", width: 14 },
+    { header: "Potongan lain", key: "lain", width: 14 },
+    { header: "Diterima", key: "bersih", width: 15 },
+    { header: "Catatan", key: "catatan", width: 30 },
+  ];
+  ws.columns = KOLOM.map(({ key, width }) => ({ key, width }));
+  const n = KOLOM.length;
+
+  const logo = await ambilLogo();
+  if (logo) {
+    const id = wb.addImage({ buffer: logo as ArrayBuffer, extension: "png" });
+    ws.addImage(id, { tl: { col: 0.2, row: 0.2 }, ext: { width: 66, height: 85 } });
+  }
+
+  ws.mergeCells(1, 2, 1, n);
+  ws.getCell(1, 2).value = "PT ALLEGRO GLOBAL CONSTRUCTION";
+  ws.getCell(1, 2).font = { size: 16, bold: true, color: { argb: TEAL } };
+
+  ws.mergeCells(2, 2, 2, n);
+  ws.getCell(2, 2).value = "Daftar Upah Mingguan";
+  ws.getCell(2, 2).font = { size: 12, bold: true };
+
+  ws.mergeCells(3, 2, 3, n);
+  ws.getCell(3, 2).value = `Proyek ${opsi.payroll.projectId} · Section ${opsi.payroll.sectionName}`;
+  ws.getCell(3, 2).font = { size: 10 };
+
+  ws.mergeCells(4, 2, 4, n);
+  ws.getCell(4, 2).value = `Periode ${opsi.payroll.periodStart} sampai ${opsi.payroll.periodEnd} · status ${opsi.payroll.status}`;
+  ws.getCell(4, 2).font = { size: 10 };
+
+  ws.mergeCells(5, 2, 5, n);
+  ws.getCell(5, 2).value = `Dicetak ${new Date().toLocaleString("id-ID")} oleh ${opsi.dibuatOleh}`;
+  ws.getCell(5, 2).font = { size: 9, italic: true, color: { argb: "FF61727A" } };
+
+  ws.getRow(1).height = 22;
+  ws.getRow(6).height = 8;
+
+  const kepala = ws.getRow(7);
+  KOLOM.forEach((k, i) => {
+    const sel = kepala.getCell(i + 1);
+    sel.value = k.header;
+    sel.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+    sel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TEAL } };
+    sel.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  });
+  kepala.height = 26;
+
+  const RUPIAH = '#,##0';
+
+  opsi.items.forEach((i, urut) => {
+    const baris = ws.addRow({
+      kode: i.employeeId,
+      nama: i.employeeName,
+      posisi: i.position,
+      mode: i.paymentMode,
+      hari: i.totalWorkDays,
+      jam: i.totalWorkHours,
+      lembur: i.totalOvertimeHours,
+      tarifHarian: i.dailyRate,
+      tarifJam: i.hourlyRate,
+      tarifLembur: i.overtimeHourlyRate,
+      pokok: i.regularPay,
+      upahLembur: i.overtimePay,
+      tambahan: i.additionalPay || 0,
+      kotor: i.grossPay,
+      bon: i.loanDeduction,
+      lain: i.otherDeduction,
+      bersih: i.netPay,
+      catatan: i.catatan || "",
+    });
+    baris.font = { size: 10 };
+    ["tarifHarian","tarifJam","tarifLembur","pokok","upahLembur","tambahan","kotor","bon","lain","bersih"]
+      .forEach((k) => (baris.getCell(k).numFmt = RUPIAH));
+    ["hari","jam","lembur"].forEach((k) => (baris.getCell(k).numFmt = "0.00"));
+
+    if (urut % 2 === 1) {
+      baris.eachCell((sel) => {
+        sel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ABU } };
+      });
+    }
+    if (i.netPay <= 0) {
+      baris.getCell("bersih").font = { size: 10, bold: true, color: { argb: "FFB3261E" } };
+    }
+  });
+
+  const total = ws.addRow({
+    nama: `JUMLAH · ${opsi.items.length} karyawan`,
+    kotor: opsi.payroll.totalGrossPay,
+    bon: opsi.payroll.totalLoanDeduction,
+    lain: opsi.payroll.totalOtherDeduction,
+    bersih: opsi.payroll.totalNetPay,
+  });
+  total.font = { bold: true, size: 10 };
+  total.eachCell((sel) => {
+    sel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: KUNING } };
+  });
+  ["kotor", "bon", "lain", "bersih"].forEach((k) => (total.getCell(k).numFmt = RUPIAH));
+
+  ws.autoFilter = { from: { row: 7, column: 1 }, to: { row: 7, column: n } };
+
+  // Kolom tanda tangan, karena daftar upah biasanya ikut diarsipkan cetak.
+  const kosong = ws.addRow([]);
+  const barisTtd = kosong.number + 2;
+  ws.getCell(barisTtd, 2).value = "Dibuat oleh";
+  ws.getCell(barisTtd, 6).value = "Diperiksa";
+  ws.getCell(barisTtd, 11).value = "Disetujui";
+  [2, 6, 11].forEach((kol) => {
+    ws.getCell(barisTtd, kol).font = { size: 10, bold: true };
+    ws.getCell(barisTtd + 4, kol).border = { top: { style: "thin" } };
+  });
+
+  const isi = await wb.xlsx.writeBuffer();
+  const berkas = new Blob([isi], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const tautan = document.createElement("a");
+  tautan.href = URL.createObjectURL(berkas);
+  tautan.download = `Payroll-${opsi.payroll.projectId}-${opsi.payroll.sectionName}-${opsi.payroll.periodStart}.xlsx`;
   tautan.click();
   URL.revokeObjectURL(tautan.href);
 }

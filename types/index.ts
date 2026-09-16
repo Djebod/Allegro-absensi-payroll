@@ -278,3 +278,64 @@ export interface LoanRepayment {
   createdBy: string;
   createdAt?: unknown;
 }
+
+/* ---------------- Payroll mingguan ---------------- */
+
+export type StatusPayroll = "DRAFT" | "REVIEW" | "APPROVED" | "PAID" | "LOCKED";
+
+/** ID dokumen = "<proyek>__<section>__<tanggalMulai>", jadi satu periode
+ *  tidak mungkin dihitung dua kali untuk section yang sama. */
+export interface Payroll {
+  id: string;
+  projectId: string;
+  sectionId: string;
+  sectionName: string;
+  periodStart: string;
+  periodEnd: string;
+  status: StatusPayroll;
+  totalEmployees: number;
+  totalGrossPay: number;
+  totalLoanDeduction: number;
+  totalOtherDeduction: number;
+  totalNetPay: number;
+  /** Penanda bahwa potongan bon sudah dibukukan, supaya tidak dobel. */
+  bonDiproses: boolean;
+  createdBy: string;
+  approvedBy?: string | null;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface PayrollItem {
+  id: string;
+  payrollId: string;
+  employeeId: string;
+  employeeName: string;
+  position: Position;
+  paymentMode: PaymentMode;
+
+  totalWorkDays: number;
+  totalWorkHours: number;
+  totalOvertimeHours: number;
+  /** Lembur yang tercatat tetapi gugur karena kurang dari batas minimum. */
+  lemburGugurJam: number;
+  hariTidakLengkap: number;
+
+  /** Salinan tarif yang dipakai. Disimpan supaya histori tidak ikut
+   *  berubah ketika tarif karyawan dinaikkan di kemudian hari. */
+  dailyRate: number;
+  hourlyRate: number;
+  overtimeHourlyRate: number;
+  tarifBerubahDiPeriode: boolean;
+
+  regularPay: number;
+  overtimePay: number;
+  additionalPay: number;
+  grossPay: number;
+  loanDeduction: number;
+  otherDeduction: number;
+  netPay: number;
+
+  catatan: string;
+  createdAt?: unknown;
+}

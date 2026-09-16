@@ -19,9 +19,9 @@ const menu = [
   },
   {
     judul: "Payroll Mingguan",
-    ket: "Perhitungan gaji per proyek dan seksi.",
-    href: "#",
-    siap: false,
+    ket: "Hitung, periksa, dan sahkan upah mingguan.",
+    href: "/payroll",
+    siap: true,
   },
 ];
 

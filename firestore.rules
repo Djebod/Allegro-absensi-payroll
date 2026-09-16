@@ -2,10 +2,10 @@ rules_version = '2';
 
 // ============================================================
 //  ABSENSI & PAYROLL PROYEK — Allegro Global Construction
-//  Security Rules — Tahap 8
+//  Security Rules — Tahap 9
 //  users, projects, sections, employees, employeePrivate,
 //  salaryRates, employeeAssignments, attendance, attendanceCorrections,
-//  employeeLoans, loanLocks, loanRepayments
+//  employeeLoans, loanLocks, loanRepayments, payroll, payrollItems
 //
 //  Prinsip: DEFAULT DENY. Semua yang tidak disebut di sini ditolak.
 //  Menu yang disembunyikan di layar BUKAN keamanan. Aturan di file
@@ -381,6 +381,77 @@ service cloud.firestore {
         && request.resource.data.amount > 0;
       // Catatan pembayaran bersifat tambah-saja, sama seperti jejak audit.
       allow update, delete: if false;
+    }
+
+    // ---------- payroll ----------
+    function statusPayroll(payrollId) {
+      return get(/databases/$(database)/documents/payroll/$(payrollId)).data.status;
+    }
+
+    function payrollSah() {
+      let d = request.resource.data;
+      return d.projectId is string && d.projectId.size() > 0
+        && d.sectionId is string && d.sectionId.size() > 0
+        && d.periodStart is string && d.periodStart.size() == 10
+        && d.periodEnd is string && d.periodEnd.size() == 10
+        && d.periodEnd > d.periodStart
+        && d.status in ['DRAFT', 'REVIEW', 'APPROVED', 'PAID', 'LOCKED']
+        && d.totalNetPay is number;
+    }
+
+    match /payroll/{payrollId} {
+      allow read: if isAdmin() || isFinance();
+
+      // ID dokumen mengunci satu periode per section, sehingga periode
+      // yang sama tidak bisa dihitung dua kali.
+      allow create: if (isAdmin() || isFinance())
+        && payrollSah()
+        && request.resource.data.status == 'DRAFT'
+        && payrollId == request.resource.data.projectId + '__'
+                      + request.resource.data.sectionId + '__'
+                      + request.resource.data.periodStart;
+
+      // Periode, proyek, dan section tidak boleh bergeser setelah dibuat.
+      // Payroll yang sudah LOCKED tidak bisa disentuh siapa pun.
+      allow update: if (isAdmin() || isFinance())
+        && payrollSah()
+        && resource.data.status != 'LOCKED'
+        && request.resource.data.projectId == resource.data.projectId
+        && request.resource.data.sectionId == resource.data.sectionId
+        && request.resource.data.periodStart == resource.data.periodStart
+        && request.resource.data.periodEnd == resource.data.periodEnd;
+
+      allow delete: if false;
+    }
+
+    // ---------- payrollItems ----------
+    match /payrollItems/{itemId} {
+      allow read: if isAdmin() || isFinance();
+
+      allow create: if (isAdmin() || isFinance())
+        && request.resource.data.payrollId is string
+        && request.resource.data.employeeId is string
+        && request.resource.data.netPay is number;
+
+      // Hanya boleh disesuaikan selagi DRAFT atau REVIEW, dan hanya
+      // bagian tambahan/potongannya. Jam kerja dan tarif adalah salinan
+      // dari absensi serta tarif yang berlaku saat itu - kalau keduanya
+      // bisa diketik ulang, seluruh gunanya snapshot hilang.
+      allow update: if (isAdmin() || isFinance())
+        && statusPayroll(resource.data.payrollId) in ['DRAFT', 'REVIEW']
+        && request.resource.data.payrollId == resource.data.payrollId
+        && request.resource.data.employeeId == resource.data.employeeId
+        && request.resource.data.totalWorkDays == resource.data.totalWorkDays
+        && request.resource.data.totalWorkHours == resource.data.totalWorkHours
+        && request.resource.data.totalOvertimeHours == resource.data.totalOvertimeHours
+        && request.resource.data.dailyRate == resource.data.dailyRate
+        && request.resource.data.hourlyRate == resource.data.hourlyRate
+        && request.resource.data.overtimeHourlyRate == resource.data.overtimeHourlyRate
+        && request.resource.data.regularPay == resource.data.regularPay
+        && request.resource.data.overtimePay == resource.data.overtimePay;
+
+      allow delete: if (isAdmin() || isFinance())
+        && statusPayroll(resource.data.payrollId) == 'DRAFT';
     }
 
     // ---------- koleksi lain masih ditutup ----------
